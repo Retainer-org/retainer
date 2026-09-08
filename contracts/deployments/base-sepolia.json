@@ -1,0 +1,24 @@
+{
+  "network": "base-sepolia",
+  "chainId": 84532,
+  "deployedAt": "2026-09-09",
+  "contracts": {
+    "SpendRouter": {
+      "address": "0x337099eE403C090388A66cc9370F7b0Fe4CDcC79",
+      "deployedBy": "Retainer",
+      "txHash": "0x761cad85bf7a350b2c1c20352382a8c33f6550764d5485bc1d346257f691becb",
+      "block": 46564847,
+      "gasUsed": 1631793,
+      "constructorArgs": { "spendPermissionManager": "0xf85210B21cC50302F477BA56686d2019dC9b67Ad" },
+      "compiler": { "version": "v0.8.30+commit.73712a01", "optimizer": true, "runs": 999999, "evmVersion": "cancun" },
+      "source": "coinbase/spend-permissions@e0004e63edc4e17de7aa978293800ac7a16892e5, verbatim",
+      "verified": "https://sepolia.basescan.org/address/0x337099eE403C090388A66cc9370F7b0Fe4CDcC79#code"
+    }
+  },
+  "canonical": {
+    "note": "Not deployed by us. Pre-existing, identical address on Base mainnet and Base Sepolia.",
+    "SpendPermissionManager": "0xf85210B21cC50302F477BA56686d2019dC9b67Ad",
+    "PublicERC6492Validator": "0xcfCE48B757601F3f351CB6f434CB0517aEEE293D",
+    "USDC": "0x036CbD53842c5426634e7929541eC2318f3dCF7e"
+  }
+}

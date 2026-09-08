@@ -76,7 +76,7 @@ we read is the code we transact against.
 | SpendPermissionManager | `0xf85210B21cC50302F477BA56686d2019dC9b67Ad` |
 | PublicERC6492Validator | `0xcfCE48B757601F3f351CB6f434CB0517aEEE293D` |
 | USDC | `0x036CbD53842c5426634e7929541eC2318f3dCF7e` |
-| Retainer SpendRouter | _pending deployment_ |
+| Retainer SpendRouter | [`0x337099eE403C090388A66cc9370F7b0Fe4CDcC79`](https://sepolia.basescan.org/address/0x337099eE403C090388A66cc9370F7b0Fe4CDcC79#code) (verified) |
 
 ## Out of scope in Phase 1
 
