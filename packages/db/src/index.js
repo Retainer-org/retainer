@@ -8,11 +8,17 @@ pg.types.setTypeParser(1700, (v) => v);   // numeric
 let _pool;
 export function pool() {
   if (!_pool) {
-    const connectionString = process.env.DATABASE_URL;
-    if (!connectionString) throw new Error('DATABASE_URL is not set');
+    const raw = process.env.DATABASE_URL;
+    if (!raw) throw new Error('DATABASE_URL is not set');
+    // Strip sslmode/channel_binding from the URL and configure TLS explicitly.
+    // pg-connection-string warns loudly about how it interprets sslmode, and
+    // that warning drowns out drill output for no benefit.
+    const u = new URL(raw);
+    const local = u.hostname === 'localhost' || u.hostname === '127.0.0.1';
+    for (const k of ['sslmode', 'channel_binding']) u.searchParams.delete(k);
     _pool = new pg.Pool({
-      connectionString,
-      ssl: connectionString.includes('localhost') ? false : { rejectUnauthorized: true },
+      connectionString: u.toString(),
+      ssl: local ? false : { rejectUnauthorized: true },
       max: 5,
     });
   }

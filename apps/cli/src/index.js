@@ -17,7 +17,7 @@ async function main() {
       // derived from the permission, never chosen -- that is what makes the
       // UNIQUE (permission_id, period_start) key a real idempotency guarantee.
       const permId = arg('permission');
-      const { rows } = await query('SELECT * FROM permissions WHERE id=$1 OR permission_hash=$1', [permId]);
+      const { rows } = await query('SELECT * FROM permissions WHERE id::text = $1 OR permission_hash = $1', [permId]);
       if (!rows.length) throw new Error('permission not found');
       const p = rows[0];
       const now = Math.floor(Date.now() / 1000);
@@ -28,7 +28,7 @@ async function main() {
         const anchor = per.state === 'NOT_STARTED' ? BigInt(p.start_ts) : BigInt(p.end_ts) - BigInt(p.period_seconds);
         per.periodStart = anchor; per.periodEnd = anchor + BigInt(p.period_seconds);
       }
-      const source = arg('usage') !== undefined && rest.includes('--usage') ? 'usage' : 'fixed';
+      const source = rest.includes('--usage') ? 'usage' : 'fixed';
       const amount = source === 'usage' ? '0' : arg('amount');
       if (source === 'fixed' && !amount) throw new Error('--amount required for a fixed charge');
       const ins = await query(
@@ -48,7 +48,7 @@ async function main() {
     }
     case 'record-usage': {
       const permId = arg('permission');
-      const { rows } = await query('SELECT * FROM permissions WHERE id=$1 OR permission_hash=$1', [permId]);
+      const { rows } = await query('SELECT * FROM permissions WHERE id::text = $1 OR permission_hash = $1', [permId]);
       const p = rows[0];
       const now = Math.floor(Date.now() / 1000);
       const per = periodFor({ start: p.start_ts, end: p.end_ts, period: p.period_seconds }, now);

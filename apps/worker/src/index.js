@@ -9,6 +9,8 @@ const log = (o) => console.log(JSON.stringify({ ts: new Date().toISOString(), ..
 
 const ONCE = process.argv.includes('--once');
 const CRASH = process.env.RETAINER_CRASH_AFTER_BROADCAST === '1';
+const CRASH_PRE = process.env.RETAINER_CRASH_BEFORE_BROADCAST === '1';
+const ONLY = (() => { const i = process.argv.indexOf('--charge'); return i >= 0 ? process.argv[i + 1] : null; })();
 const POLL_MS = Number(process.env.RETAINER_POLL_MS ?? 4000);
 
 async function tick() {
@@ -31,11 +33,11 @@ async function tick() {
   }
 
   // 4. Do one unit of new work.
-  const row = await claimCharge();
+  const row = await claimCharge(ONLY);
   if (!row) return { charged: 0 };
   log({ event: 'claimed', chargeId: row.id, permissionHash: row.permission_hash,
         periodStart: row.period_start, amountSource: row.amount_source });
-  const out = await attemptCharge(row, { crashAfterBroadcast: CRASH });
+  const out = await attemptCharge(row, { crashAfterBroadcast: CRASH, crashBeforeBroadcast: CRASH_PRE });
   log({ event: 'attempt', chargeId: row.id, ...out });
   return { charged: 1 };
 }
@@ -43,7 +45,7 @@ async function tick() {
 async function main() {
   const cfg = config();
   log({ event: 'worker.start', chainId: cfg.chainId, router: cfg.router,
-        executor: cfg.executor, once: ONCE, crashInjection: CRASH });
+        executor: cfg.executor, once: ONCE, crashInjection: CRASH, crashPre: CRASH_PRE, onlyCharge: ONLY });
 
   if (ONCE) { await tick(); await close(); return; }
 

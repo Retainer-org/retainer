@@ -39,7 +39,7 @@ export function dispositionFor(mode, retryAt, attempts) {
 }
 
 /** Claim one due charge. FOR UPDATE SKIP LOCKED so workers never collide. */
-export async function claimCharge() {
+export async function claimCharge(onlyChargeId = null) {
   return tx(async (c) => {
     const { rows } = await c.query(`
       SELECT ch.*, p.permission_hash, p.account, p.spender, p.token, p.allowance,
@@ -48,10 +48,11 @@ export async function claimCharge() {
         FROM charges ch
         JOIN permissions p ON p.id = ch.permission_id
        WHERE ch.state IN ('pending','failed_retryable','failed_deferred')
-         AND ch.next_attempt_at <= now()
+         AND ($1::bigint IS NULL OR ch.id = $1::bigint)
+         AND ($1::bigint IS NOT NULL OR ch.next_attempt_at <= now())
        ORDER BY ch.next_attempt_at
          FOR UPDATE OF ch SKIP LOCKED
-       LIMIT 1`);
+       LIMIT 1`, [onlyChargeId]);
     if (!rows.length) return null;
     const row = rows[0];
     await c.query(`UPDATE charges SET state='in_flight', attempts = attempts + 1, updated_at = now()
@@ -109,7 +110,7 @@ async function recordFailure(row, mode, detail, retryAt) {
  * broadcast and the state update, recovery re-broadcasts the identical raw
  * transaction. Same nonce, same hash, so at most one can ever land.
  */
-export async function attemptCharge(row, { crashAfterBroadcast = false } = {}) {
+export async function attemptCharge(row, { crashAfterBroadcast = false, crashBeforeBroadcast = false } = {}) {
   const cfg = config();
   const client = publicClient();
   const wallet = executorWallet();
@@ -169,6 +170,13 @@ export async function attemptCharge(row, { crashAfterBroadcast = false } = {}) {
     return { attemptId: rows[0].id, rawTx, txHash, nonce };
   });
   // --- raw transaction is now durable. Only now may we broadcast. -----------
+
+  if (crashBeforeBroadcast) {
+    // Fault injection for the superseded branch. The attempt is durable and
+    // holds nonce N; nothing has been broadcast. Exit hard.
+    console.log(JSON.stringify({ event: 'CRASH_INJECTED_BEFORE_BROADCAST', chargeId: row.id, attemptId, txHash, nonce }));
+    process.exit(137);
+  }
 
   let sendErr = null;
   try {

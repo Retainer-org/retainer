@@ -38,6 +38,36 @@ A structural consequence: `SpendRouter.extraData` encodes exactly one recipient
 and forwards the full value, so there is no fee split. Retainer's revenue is a
 flat SaaS fee to merchants, never a percentage of flow.
 
+## Reproducing the test setup — the non-obvious prerequisite
+
+**The `SpendPermissionManager` must be an owner of the smart account, or every
+charge reverts.**
+
+`SpendPermissionManager` moves funds by calling `execute()` on the user's
+account, and `CoinbaseSmartWallet.execute` is `onlyEntryPointOrOwner`. So unless
+the manager (`0xf85210B21cC50302F477BA56686d2019dC9b67Ad`) is registered as an
+owner, `spend()` fails — and it presents as a mysterious universal revert with
+nothing in the permission itself looking wrong.
+
+Coinbase's own wallet does this inside its permission-approval flow, so it is
+invisible on the real browser path. A **scripted** wallet has to do it
+explicitly:
+
+```js
+// after createAccount(), as an existing owner
+await wallet.writeContract({
+  address: smartAccount, abi: walletAbi,
+  functionName: 'addOwnerAddress',
+  args: [SPEND_PERMISSION_MANAGER],
+});
+```
+
+`scripts/setup-test-account.js` does this, and upstream's own Foundry test base
+does the same thing (`account.addOwnerAddress(address(permissionManager))`).
+
+A second consequence: a spend permission's `account` must be a Base Account, so
+a plain EOA can never be the payer. It can only be an *owner* of one.
+
 ## Layout
 
 ```

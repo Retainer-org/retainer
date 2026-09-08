@@ -13,7 +13,7 @@ const wallet = createWalletClient({ account: exec, chain: baseSepolia, transport
 
 const i = process.argv.indexOf('--permission');
 const key = process.argv[i + 1];
-const { rows } = await query('SELECT * FROM permissions WHERE id=$1 OR permission_hash=$1', [key]);
+const { rows } = await query('SELECT * FROM permissions WHERE id::text = $1 OR permission_hash = $1', [key]);
 if (!rows.length) throw new Error('permission not found');
 const p = rows[0];
 
