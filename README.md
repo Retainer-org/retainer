@@ -80,10 +80,33 @@ contracts/          Foundry. Vendored audited source + our deploy script and tes
 ## Setup
 
 ```bash
-cp .env.example .env          # fill in; never commit
+cp .env.example .env               # fill in; never commit
 contracts/script/install-deps.sh   # pinned dependency revs
 cd contracts && forge build && forge test
+
+npm install
+node --env-file=.env packages/db/src/migrate.js
 ```
+
+## Running
+
+The worker and CLI read `.env` directly. Next does not, so export it first:
+
+```bash
+# charge engine
+node --env-file=.env apps/worker/src/index.js            # loop
+node --env-file=.env apps/worker/src/index.js --once --charge <id>
+node --env-file=.env apps/cli/src/index.js status|ledger|attempts|audit|gas
+
+# signing page (test harness) -- port 3017
+set -a; . ./.env; set +a
+npm run dev -w @retainer/web
+```
+
+The signing page must import the SDK's **browser** entrypoints
+(`@base-org/account/browser`, `@base-org/account/spend-permission/browser`).
+The default export condition resolves to the Node build, which pulls in
+`@coinbase/cdp-sdk` and its optional `@x402/*` peers and fails to compile.
 
 `contracts/lib/` is gitignored — dependencies are reinstalled from the exact
 revisions pinned in `install-deps.sh`, which match upstream's `foundry.lock`.
