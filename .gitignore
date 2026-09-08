@@ -1,0 +1,38 @@
+# ---- secrets: never commit ----
+.env
+.env.*
+!.env.example
+*.key
+*.pem
+secrets/
+keys.json
+deployer.json
+
+# ---- node ----
+node_modules/
+.pnpm-store/
+dist/
+build/
+.next/
+out/
+coverage/
+*.tsbuildinfo
+
+# ---- foundry ----
+contracts/out/
+contracts/cache/
+contracts/broadcast/*/*/dry-run/
+contracts/.gas-snapshot.tmp
+
+# ---- os / editor ----
+.DS_Store
+*.swp
+.idea/
+.vscode/
+
+# ---- logs ----
+*.log
+npm-debug.log*
+
+# ---- foundry deps: reinstall with contracts/script/install-deps.sh (revs pinned there) ----
+contracts/lib/

@@ -1,0 +1,16 @@
+# Mirrors coinbase/spend-permissions @ e0004e63edc4e17de7aa978293800ac7a16892e5
+# Vendored source MUST build byte-identically; do not change solc/evm settings.
+[profile.default]
+src = "src"
+out = "out"
+libs = ["lib"]
+evm_version = "cancun"
+
+[profile.deploy]
+optimizer = true
+optimizer_runs = 999999
+build_info = true
+
+[fmt]
+sort_imports = true
+wrap_comments = true
