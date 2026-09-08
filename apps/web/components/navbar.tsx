@@ -14,6 +14,7 @@ const links = [
   { title: "Contract", href: "/#contract" },
   { title: "FAQ", href: "/#faq" },
   { title: "Evidence", href: "/#evidence" },
+  { title: "Dashboard", href: "/dashboard" },
   { title: "Source", href: "https://github.com/Retainer-org/retainer", external: true },
   { title: "Harness (limited)", href: "/sign" },
 ];

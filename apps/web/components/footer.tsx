@@ -9,6 +9,7 @@ export function Footer() {
   const cols = [
     { title: "Project", items: [
       { title: "Source on GitHub", href: "https://github.com/Retainer-org/retainer" },
+      { title: "Dashboard (read-only)", href: "/dashboard" },
       { title: "Signing harness (limited)", href: "/sign" },
     ]},
     { title: "On-chain", items: [
