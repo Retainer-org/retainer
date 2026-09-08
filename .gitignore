@@ -36,3 +36,9 @@ npm-debug.log*
 
 # ---- foundry deps: reinstall with contracts/script/install-deps.sh (revs pinned there) ----
 contracts/lib/
+
+# ---- Aceternity UI Pro templates: licensed source, never committed. Adapted code in our own files is fine. ----
+templates/
+aceternity/
+aceternity-templates/
+**/aceternity-pro/

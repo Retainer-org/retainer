@@ -2,13 +2,21 @@
   "name": "retainer",
   "private": true,
   "type": "module",
-  "workspaces": ["packages/*", "apps/*"],
-  "engines": { "node": ">=22" },
+  "workspaces": [
+    "packages/*",
+    "apps/*"
+  ],
+  "engines": {
+    "node": ">=22"
+  },
   "scripts": {
     "build": "npm run build --workspaces --if-present",
     "typecheck": "tsc -b",
     "migrate": "node --env-file=.env packages/db/src/migrate.js",
     "worker": "node --env-file=.env apps/worker/src/index.js",
     "cli": "node --env-file=.env apps/cli/src/index.js"
+  },
+  "devDependencies": {
+    "shadcn": "^4.21.0"
   }
 }

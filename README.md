@@ -167,10 +167,31 @@ node --env-file=.env apps/worker/src/index.js            # loop
 node --env-file=.env apps/worker/src/index.js --once --charge <id>
 node --env-file=.env apps/cli/src/index.js status|ledger|attempts|audit|gas
 
-# signing page (test harness) -- port 3017
+# web: landing page at /, signing harness at /sign -- port 3017
 set -a; . ./.env; set +a
 npm run dev -w @retainer/web
 ```
+
+### Landing page and Aceternity UI
+
+`apps/web` is adapted from the Aceternity UI Pro **Simplistic SaaS** template
+(Next 16, Tailwind 4, `next-themes`, `motion`). The raw template zips live
+**outside** this repo and are never committed; only adapted code in our own files
+is. Social-proof, testimonial and pricing sections were removed rather than
+filled -- nothing here can back them.
+
+Paid Aceternity components resolve through the shadcn registry with an auth
+header. `apps/web/components.json` references the key as `${ACETERNITY_UI_API_KEY}`
+and shadcn expands it from `.env` at run time, so the literal key never enters
+git. To use the registry or the MCP server, export `.env` first:
+
+```bash
+set -a; . ./.env; set +a
+npx shadcn@latest add @aceternity/<component>   # from apps/web
+```
+
+`.mcp.json` registers the shadcn MCP server for Claude Code and contains no
+secrets. Never paste the key into `components.json` directly.
 
 The signing page must import the SDK's **browser** entrypoints
 (`@base-org/account/browser`, `@base-org/account/spend-permission/browser`).
