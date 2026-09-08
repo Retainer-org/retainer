@@ -5,16 +5,12 @@ import Link from "next/link";
 import { motion, useMotionValueEvent, useScroll, useTransform } from "motion/react";
 import { ModeToggle } from "@/components/mode-toggle";
 
-// Adapted from the template's navbar: scroll-shrinking pill nav with a
-// full-screen mobile overlay. Dropped: Resources mega-menu, login, trial CTA,
-// remote logo image. Retainer has none of those.
+// Four items. Guarantees, Contract and FAQ are reachable by scrolling the
+// landing page; Docs joins when it exists. The primary button is Dashboard --
+// "See the evidence" already lives in the hero, so it was wasted here.
 const links = [
   { title: "How it works", href: "/#how-it-works" },
-  { title: "Guarantees", href: "/#guarantees" },
-  { title: "Contract", href: "/#contract" },
-  { title: "FAQ", href: "/#faq" },
   { title: "Evidence", href: "/#evidence" },
-  { title: "Dashboard", href: "/dashboard" },
   { title: "Source", href: "https://github.com/Retainer-org/retainer", external: true },
   { title: "Harness (limited)", href: "/sign" },
 ];
@@ -44,14 +40,17 @@ export const Navbar = () => {
   });
 
   const linkCls = "text-sm font-medium text-neutral-600 transition-colors hover:text-neutral-900 dark:text-neutral-400 dark:hover:text-white";
+  const primary = "rounded-md bg-neutral-900 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-neutral-700 dark:bg-white dark:text-black dark:hover:bg-neutral-200";
 
   return (
+    // sticky, not fixed: the bar keeps its own space in the document, so page
+    // content can never render underneath it at any scroll position.
     <motion.nav
       initial={{ y: 0 }}
       animate={{ y: isVisible ? 0 : -100 }}
       transition={{ duration: 0.3, ease: "easeInOut" }}
       style={{ paddingLeft: paddingHorizontal, paddingRight: paddingHorizontal, paddingTop: paddingVertical }}
-      className="fixed inset-x-0 z-50 mx-auto w-full max-w-7xl"
+      className="sticky top-0 z-50 mx-auto w-full max-w-7xl"
     >
       <motion.div
         animate={{ borderRadius: hasScrolled ? 24 : 0, backdropFilter: hasScrolled ? "blur(12px)" : "blur(0px)" }}
@@ -59,7 +58,7 @@ export const Navbar = () => {
         className={`flex h-14 items-center justify-between px-4 transition-colors duration-300 sm:h-16 md:px-8 ${
           hasScrolled
             ? "bg-white/80 shadow-[0_1px_3px_0_rgba(0,0,0,0.1),0_1px_2px_-1px_rgba(0,0,0,0.1)] dark:bg-neutral-900/80 dark:shadow-[0_1px_3px_0_rgba(0,0,0,0.3),0_1px_2px_-1px_rgba(0,0,0,0.3)]"
-            : "bg-transparent shadow-none"
+            : "bg-white dark:bg-neutral-950"
         }`}
       >
         <Link href="/" className="flex items-center gap-2">
@@ -72,8 +71,7 @@ export const Navbar = () => {
 
         <div className="hidden items-center gap-6 lg:flex lg:gap-8">
           {links.map((l) => (
-            <Link key={l.title} href={l.href} className={linkCls}
-              {...(l.external ? { target: "_blank", rel: "noopener noreferrer" } : {})}>
+            <Link key={l.title} href={l.href} className={linkCls} {...(l.external ? { target: "_blank", rel: "noopener noreferrer" } : {})}>
               {l.title}
             </Link>
           ))}
@@ -81,9 +79,7 @@ export const Navbar = () => {
 
         <div className="hidden items-center gap-4 lg:flex">
           <ModeToggle />
-          <Link href="/#evidence" className="rounded-md bg-neutral-900 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-neutral-700 dark:bg-white dark:text-black dark:hover:bg-neutral-200">
-            See the evidence
-          </Link>
+          <Link href="/dashboard" className={primary}>Dashboard</Link>
         </div>
 
         <button onClick={() => setMobileMenuOpen(!mobileMenuOpen)} className="flex size-10 items-center justify-center rounded-md lg:hidden" aria-label="Toggle menu">
@@ -109,9 +105,7 @@ export const Navbar = () => {
           </div>
           <div className="mt-auto flex items-center justify-between pt-6">
             <ModeToggle />
-            <Link href="/#evidence" onClick={() => setMobileMenuOpen(false)} className="rounded-xl bg-neutral-900 px-4 py-3 text-base font-medium text-white dark:bg-white dark:text-black">
-              See the evidence
-            </Link>
+            <Link href="/dashboard" onClick={() => setMobileMenuOpen(false)} className="rounded-xl bg-neutral-900 px-4 py-3 text-base font-medium text-white dark:bg-white dark:text-black">Dashboard</Link>
           </div>
         </div>
       </motion.div>

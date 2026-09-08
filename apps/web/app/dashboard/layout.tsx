@@ -1,0 +1,13 @@
+import { Shell } from "@/components/dashboard/shell";
+import { loadContext } from "@/lib/dashboard-data";
+
+// Dashboard chrome: its own shell, no marketing nav or footer. Context (chain,
+// head, indexer lag, render time) is fetched here so every route's top bar
+// carries it without each page repeating the query.
+export const dynamic = "force-dynamic";
+export const runtime = "nodejs";
+
+export default async function DashboardLayout({ children }: { children: React.ReactNode }) {
+  const ctx = await loadContext();
+  return <Shell ctx={ctx}>{children}</Shell>;
+}
