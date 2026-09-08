@@ -38,6 +38,75 @@ A structural consequence: `SpendRouter.extraData` encodes exactly one recipient
 and forwards the full value, so there is no fee split. Retainer's revenue is a
 flat SaaS fee to merchants, never a percentage of flow.
 
+## Phase 1 status — closed 2026-09-09
+
+Everything in the Phase 1 definition of done is proven on Base Sepolia **except
+the real-account browser consent step, which is blocked upstream by a Coinbase
+bug**. That gap is not in this repository and there is no change we can make
+here that closes it.
+
+### Proven
+
+| | Evidence |
+|---|---|
+| Router deployed and verified | [`0x337099eE…`](https://sepolia.basescan.org/address/0x337099eE403C090388A66cc9370F7b0Fe4CDcC79#code) |
+| Custody invariant on live chain | router and executor USDC balances both zero after every charge |
+| All six failure modes | classified from chain state, no gas burned on any |
+| Crash recovery, both branches | receipt-found and nonce-superseded; exactly one spend each |
+| Variable amount computed at charge time | charge 9: enqueued at 0, settled 1,250,000 |
+| Confirmation discipline | reconciler sole writer of `confirmed`, both event topics required |
+
+Six confirmed charges, each mapping to one transaction hash:
+
+```
+1  fixed 1000000  0x91a4980a793c29276f55871b4f2a372d2c4f3170ec06f61dfd20d3a6948a1e7c
+8  fixed 1500000  0x35043fd149c096816da7f64a2270dba1ae758c021945f11dcf357bf6ba8aaa93
+9  usage 1250000  0x55c0e2b51f9580bf05e272a3e9e5b5d90d4ec8f0f9b308192126b7117b9bea3d
+10 fixed 1100000  0x8e4ce873249fc57b52485086de99aa4a0b9e341a7165916282153bbf9f68e2df
+11 fixed 1300000  0xe0ac2a1eed2bb2a5ea4c0a6ee418d4edb37c2320f488fa6b5eb2026aabb5244d
+12 fixed  900000  0xa90432814929063ed876f09f540ea2eea8e44188602f73c8095589cf1a545103
+```
+
+### Not proven — blocked upstream
+
+**A real Base Account cannot consent to a spend permission on Base Sepolia.**
+Coinbase's hosted signing UI at `keys.coinbase.com` rejects the request with:
+
+> This chain is not supported. Base Sepolia is not supported. Please try a different chain.
+
+Tracked as **[base/account-sdk#363](https://github.com/base/account-sdk/issues/363)**
+(open since 2026-07-10, no maintainer response as of 2026-09-09). A
+documentation-only PR describing it,
+[#390](https://github.com/base/account-sdk/pull/390), has also been open and
+unmerged since 2026-08-21.
+
+**The message is misleading — it is not a chain-support decision.** Base Sepolia
+is present in the popup's supported-chains map; its `displayName` is what fills
+the error text. The operative term is `isTestnet`, inside the wallet-upgrade
+path. The refusal is testnet **delegation provisioning**, surfaced with
+chain-support copy.
+
+**What actually determines success is account type:**
+
+| Account type | On-chain code | Base Sepolia consent |
+|---|---|---|
+| ERC-4337 (factory-deployed contract) | starts `0x363d3d37`, 61 bytes | works |
+| EIP-7702 (delegated EOA) | starts `0xef0100`, 23 bytes | refused |
+
+Newly created Base Accounts are now EIP-7702 provisioned, which is the broken
+path. Accounts created before that change reportedly still work. The scripted
+test wallet in `scripts/setup-test-account.js` is ERC-4337, which is exactly why
+every drill in this repo passes.
+
+This also blocks Coinbase's own documented `pay({ testnet: true })` flow, and
+`wallet_getCapabilities` still reports Base Sepolia as capable for the same
+account it refuses — so there is no capability-based way to detect it before the
+user reaches the popup.
+
+**Deliberately not worked around.** Going to mainnet to dodge it would mean a
+permanent deployment and a real-money key set months ahead of need, to route
+around someone else's open bug. The gap is recorded rather than papered over.
+
 ## Reproducing the test setup — the non-obvious prerequisite
 
 **The `SpendPermissionManager` must be an owner of the smart account, or every
