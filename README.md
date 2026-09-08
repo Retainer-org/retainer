@@ -67,6 +67,30 @@ Six confirmed charges, each mapping to one transaction hash:
 12 fixed  900000  0xa90432814929063ed876f09f540ea2eea8e44188602f73c8095589cf1a545103
 ```
 
+### Crash recovery — both branches, on-chain
+
+Worker killed **after** `eth_sendRawTransaction` returned and **before** the row
+was updated (charge 10, nonce 22). On restart, recovery found the receipt and
+confirmed it. Exactly one spend:
+
+```
+found-onchain   0x8e4ce873249fc57b52485086de99aa4a0b9e341a7165916282153bbf9f68e2df
+```
+
+Worker killed after persisting the signed attempt and **before** broadcasting
+(charge 11, nonce 24). A competing transaction then consumed nonce 24. On
+restart, recovery marked the attempt superseded — it never re-broadcast — and
+the charge succeeded on a fresh nonce. Exactly one spend:
+
+```
+superseded attempt (never landed)  0x0a078798bcc3d5c5947a4c21687fed79a79332c1521b4b4900d62bfd2e9131a3
+competing tx that took nonce 24    0x21cd8eb371c6557815715a4b69140c183f5b3981237d76c7724269f01622c32d
+final charge, nonce 25             0xe0ac2a1eed2bb2a5ea4c0a6ee418d4edb37c2320f488fa6b5eb2026aabb5244d
+```
+
+Sum of the six settled amounts is 7,050,000 (7.05 USDC); the merchant treasury
+held exactly 7,050,000 and the router 0 when checked on 2026-09-09.
+
 ### Not proven — blocked upstream
 
 **A real Base Account cannot consent to a spend permission on Base Sepolia.**

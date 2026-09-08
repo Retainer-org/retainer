@@ -21,9 +21,15 @@ export default function RootLayout({ children }: Readonly<{ children: React.Reac
         {/* attribute="class" + enableSystem: a real second palette (.dark tokens in
             globals.css), following the OS by default, with a manual toggle. */}
         <ThemeProvider attribute="class" defaultTheme="system" enableSystem disableTransitionOnChange>
-          <Navbar />
-          {children}
-          <Footer />
+          {/* The nav is fixed, so every route needs the same top offset (h-14 / sm:h-16),
+              and the main region must fill the viewport so the footer sits at the
+              bottom on short pages. Doing it here means /sign, /dashboard and /docs
+              all inherit it instead of each page rediscovering the bug. */}
+          <div className="flex min-h-screen flex-col">
+            <Navbar />
+            <main className="flex-1 pt-14 sm:pt-16">{children}</main>
+            <Footer />
+          </div>
         </ThemeProvider>
       </body>
     </html>

@@ -13,7 +13,9 @@ const links = [
   { title: "Guarantees", href: "/#guarantees" },
   { title: "Contract", href: "/#contract" },
   { title: "FAQ", href: "/#faq" },
+  { title: "Evidence", href: "/#evidence" },
   { title: "Source", href: "https://github.com/Retainer-org/retainer", external: true },
+  { title: "Harness (limited)", href: "/sign" },
 ];
 
 export const Navbar = () => {
@@ -78,8 +80,8 @@ export const Navbar = () => {
 
         <div className="hidden items-center gap-4 lg:flex">
           <ModeToggle />
-          <Link href="/sign" className="rounded-md bg-neutral-900 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-neutral-700 dark:bg-white dark:text-black dark:hover:bg-neutral-200">
-            Try the signing harness
+          <Link href="/#evidence" className="rounded-md bg-neutral-900 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-neutral-700 dark:bg-white dark:text-black dark:hover:bg-neutral-200">
+            See the evidence
           </Link>
         </div>
 
@@ -106,8 +108,8 @@ export const Navbar = () => {
           </div>
           <div className="mt-auto flex items-center justify-between pt-6">
             <ModeToggle />
-            <Link href="/sign" onClick={() => setMobileMenuOpen(false)} className="rounded-xl bg-neutral-900 px-4 py-3 text-base font-medium text-white dark:bg-white dark:text-black">
-              Try the signing harness
+            <Link href="/#evidence" onClick={() => setMobileMenuOpen(false)} className="rounded-xl bg-neutral-900 px-4 py-3 text-base font-medium text-white dark:bg-white dark:text-black">
+              See the evidence
             </Link>
           </div>
         </div>

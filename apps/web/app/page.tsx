@@ -3,19 +3,19 @@ import { HowItWorks } from "@/components/how-it-works";
 import { Guarantees } from "@/components/guarantees";
 import { Contract } from "@/components/contract";
 import { FAQs } from "@/components/faqs";
-import { CTA } from "@/components/cta";
+import { Evidence } from "@/components/evidence";
 
 // Three template sections are omitted: the social-proof strip, the quote carousel and the price table.
 // Nothing in this repo can back any of them.
 export default function Home() {
   return (
-    <main>
+    <div>
       <Hero />
       <HowItWorks />
       <Guarantees />
       <Contract />
       <FAQs />
-      <CTA />
-    </main>
+      <Evidence />
+    </div>
   );
 }

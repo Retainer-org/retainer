@@ -9,7 +9,7 @@ export function Footer() {
   const cols = [
     { title: "Project", items: [
       { title: "Source on GitHub", href: "https://github.com/Retainer-org/retainer" },
-      { title: "Signing harness", href: "/sign" },
+      { title: "Signing harness (limited)", href: "/sign" },
     ]},
     { title: "On-chain", items: [
       { title: "SpendRouter (verified)", href: `https://sepolia.basescan.org/address/${ROUTER}#code` },

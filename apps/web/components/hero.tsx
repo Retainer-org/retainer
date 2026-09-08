@@ -1,36 +1,48 @@
 import Link from "next/link";
 import { Badge } from "./badge";
+import { AtomicFlow } from "./atomic-flow";
 
 const ROUTER = "0x337099eE403C090388A66cc9370F7b0Fe4CDcC79";
 
-// Adapted from the template hero. The "window" that held a product screenshot
-// now holds the integration itself, because for this audience the code is the
-// screenshot. Decorative shader dropped.
+// Adapted from the template hero. Two columns on md+: the claim on the left, the
+// claim *drawn* on the right (customer → router → merchant, router back to zero).
+// The template's screenshot window below now holds the integration itself.
+// Top padding is small because the layout already offsets the fixed nav.
 export default function Hero() {
   return (
     <div className="relative w-full overflow-hidden bg-white dark:bg-neutral-950">
-      <div className="relative z-10 mx-auto max-w-7xl px-4 pt-28 pb-12 md:px-8 md:pt-40 md:pb-24">
-        <Badge href="/#contract">Running on Base Sepolia · not on mainnet</Badge>
+      <div className="relative z-10 mx-auto max-w-7xl px-4 pt-10 pb-12 md:px-8 md:pt-20 md:pb-24">
+        <div className="grid items-center gap-10 md:grid-cols-2 md:gap-12">
+          <div>
+            <Badge href="/#contract">Running on Base Sepolia · not on mainnet</Badge>
 
-        <h1 className="mt-4 max-w-3xl text-4xl font-medium tracking-tight text-neutral-700 md:text-7xl dark:text-neutral-300">
-          Recurring USDC billing that never holds the money.
-        </h1>
+            <h1 className="mt-4 max-w-2xl text-4xl font-medium tracking-tight text-neutral-700 md:text-6xl dark:text-neutral-300">
+              Recurring USDC billing that never holds the money.
+            </h1>
 
-        <p className="mt-4 max-w-2xl text-base text-neutral-700 md:text-xl dark:text-neutral-300">
-          Retainer charges on schedule against Base spend permissions. Funds move
-          customer → router → merchant in one atomic transaction, and the router&apos;s
-          balance is zero after every charge. A billing engine, not a wallet.
-        </p>
+            <p className="mt-4 max-w-xl text-base text-neutral-700 md:text-lg dark:text-neutral-300">
+              Retainer charges on schedule against Base spend permissions. Funds move
+              customer → router → merchant in one atomic transaction, and the router&apos;s
+              balance is zero after every charge. A billing engine, not a wallet.
+            </p>
 
-        <div className="mt-8 flex flex-wrap items-center gap-4">
-          <Link href={`https://sepolia.basescan.org/address/${ROUTER}#code`} target="_blank" rel="noopener noreferrer"
-            className="inline-flex items-center gap-2 rounded-md bg-neutral-900 px-6 py-3 text-base font-medium text-white transition-colors hover:bg-neutral-700 dark:bg-white dark:text-black dark:hover:bg-neutral-200">
-            Verified contract <Arrow className="size-4" />
-          </Link>
-          <Link href="https://github.com/Retainer-org/retainer" target="_blank" rel="noopener noreferrer"
-            className="inline-flex items-center rounded-md bg-white px-6 py-3 text-base font-medium text-neutral-700 ring-1 ring-neutral-200 transition-colors hover:bg-neutral-50 dark:bg-neutral-800 dark:text-neutral-200 dark:ring-neutral-700 dark:hover:bg-neutral-700">
-            Read the source
-          </Link>
+            <div className="mt-8 flex flex-wrap items-center gap-4">
+              <Link href={`https://sepolia.basescan.org/address/${ROUTER}#code`} target="_blank" rel="noopener noreferrer"
+                className="inline-flex items-center gap-2 rounded-md bg-neutral-900 px-6 py-3 text-base font-medium text-white transition-colors hover:bg-neutral-700 dark:bg-white dark:text-black dark:hover:bg-neutral-200">
+                Verified contract <Arrow className="size-4" />
+              </Link>
+              <Link href="/#evidence"
+                className="inline-flex items-center rounded-md bg-white px-6 py-3 text-base font-medium text-neutral-700 ring-1 ring-neutral-200 transition-colors hover:bg-neutral-50 dark:bg-neutral-800 dark:text-neutral-200 dark:ring-neutral-700 dark:hover:bg-neutral-700">
+                See the evidence
+              </Link>
+            </div>
+          </div>
+
+          {/* Right-hand space: the atomic flow. Inline SVG, renders after the text in
+              DOM order, fixed viewBox so no layout shift, no image fetch. */}
+          <div className="rounded-2xl bg-white/60 p-3 ring-1 ring-black/5 md:p-5 dark:bg-neutral-900/60 dark:ring-white/10">
+            <AtomicFlow />
+          </div>
         </div>
 
         <div className="mt-16 md:mt-24">
