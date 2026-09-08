@@ -5,12 +5,13 @@ import Link from "next/link";
 import { motion, useMotionValueEvent, useScroll, useTransform } from "motion/react";
 import { ModeToggle } from "@/components/mode-toggle";
 
-// Four items. Guarantees, Contract and FAQ are reachable by scrolling the
-// landing page; Docs joins when it exists. The primary button is Dashboard --
+// Five items now that Docs exists. Guarantees, Contract and FAQ are reachable
+// by scrolling the landing page. The primary button is Dashboard --
 // "See the evidence" already lives in the hero, so it was wasted here.
 const links = [
   { title: "How it works", href: "/#how-it-works" },
   { title: "Evidence", href: "/#evidence" },
+  { title: "Docs", href: "/docs" },
   { title: "Source", href: "https://github.com/Retainer-org/retainer", external: true },
   { title: "Harness (limited)", href: "/sign" },
 ];
