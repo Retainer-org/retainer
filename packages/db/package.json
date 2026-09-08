@@ -1,0 +1,9 @@
+{
+  "name": "@retainer/db",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "main": "src/index.js",
+  "exports": { ".": "./src/index.js" },
+  "dependencies": { "pg": "^8.13.0" }
+}
