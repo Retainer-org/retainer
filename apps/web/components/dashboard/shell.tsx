@@ -7,6 +7,8 @@ import { ModeToggle } from "@/components/mode-toggle";
 import type { Context } from "@/lib/dashboard-data";
 
 const nav = [
+  { href: "/dashboard/expected", label: "Expected payments" },
+  { href: "/dashboard/review", label: "Review queue", badgeKey: "review" as const },
   { href: "/dashboard/permissions", label: "Permissions" },
   { href: "/dashboard/charges", label: "Charges" },
   { href: "/dashboard/failures", label: "Failures" },
@@ -20,7 +22,7 @@ const fmt = (v: string) => new Date(v).toISOString().slice(0, 19) + "Z";
  * footer. The top bar is sticky in normal flow, so content never scrolls
  * underneath it.
  */
-export function Shell({ ctx, children }: { ctx: Context; children: React.ReactNode }) {
+export function Shell({ ctx, reviewCount = 0, children }: { ctx: Context; reviewCount?: number; children: React.ReactNode }) {
   const path = usePathname();
   const [open, setOpen] = useState(false);
 
@@ -28,10 +30,13 @@ export function Shell({ ctx, children }: { ctx: Context; children: React.ReactNo
     const active = path === n.href || path.startsWith(n.href + "/");
     return (
       <Link key={n.href} href={n.href} onClick={() => setOpen(false)}
-        className={`block rounded-lg px-3 py-2 text-sm transition-colors ${active
+        className={`flex items-center justify-between gap-2 rounded-lg px-3 py-2 text-sm transition-colors ${active
           ? "bg-neutral-900 font-medium text-white dark:bg-white dark:text-black"
           : "text-neutral-700 hover:bg-neutral-100 dark:text-neutral-300 dark:hover:bg-neutral-800"}`}>
-        {n.label}
+        <span>{n.label}</span>
+        {"badgeKey" in n && reviewCount > 0 && (
+          <span className={`rounded-full px-1.5 py-0.5 font-mono text-[10px] ${active ? "bg-white/20" : "bg-amber-500/15 text-amber-700 dark:text-amber-400"}`}>{reviewCount}</span>
+        )}
       </Link>
     );
   });
@@ -49,19 +54,19 @@ export function Shell({ ctx, children }: { ctx: Context; children: React.ReactNo
           </Link>
           <span className="text-neutral-300 dark:text-neutral-700">/</span>
           <span className="text-sm text-neutral-700 dark:text-neutral-300">Dashboard</span>
-          <span className="ml-1 rounded-full border border-neutral-300 px-2 py-0.5 text-[10px] font-medium tracking-wide text-neutral-600 dark:border-neutral-700 dark:text-neutral-400">READ-ONLY</span>
+          <span className="ml-1 rounded-full border border-neutral-300 px-2 py-0.5 text-[10px] font-medium tracking-wide text-neutral-600 dark:border-neutral-700 dark:text-neutral-400">BASE SEPOLIA</span>
 
           {/* context strip: which chain, how fresh, how far behind */}
           <div className="ml-auto hidden font-mono text-[11px] text-neutral-500 lg:block dark:text-neutral-400">
-            chain {ctx.chainId} · head {ctx.head}
-            {ctx.indexer && <> · indexed {ctx.indexer.lastIndexedBlock} ({ctx.indexer.lag} behind)</>}
+            chain {ctx.chainId} · head {ctx.head ?? <span className="text-amber-600 dark:text-amber-400">unavailable</span>}
+            {ctx.indexer && <> · indexed {ctx.indexer.lastIndexedBlock}{ctx.indexer.lag && <> ({ctx.indexer.lag} behind)</>}</>}
             {" "}· rendered {fmt(ctx.fetchedAt)}
           </div>
           <div className="ml-auto lg:ml-3"><ModeToggle /></div>
         </div>
         {/* the same strip, wrapped, on narrow screens */}
         <div className="border-t border-neutral-100 px-4 py-1.5 font-mono text-[11px] text-neutral-500 lg:hidden dark:border-white/5 dark:text-neutral-400">
-          chain {ctx.chainId} · head {ctx.head}{ctx.indexer && <> · {ctx.indexer.lag} behind</>} · {fmt(ctx.fetchedAt)}
+          chain {ctx.chainId} · head {ctx.head ?? "unavailable"}{ctx.indexer?.lag && <> · {ctx.indexer.lag} behind</>} · {fmt(ctx.fetchedAt)}
         </div>
       </header>
 
@@ -69,7 +74,7 @@ export function Shell({ ctx, children }: { ctx: Context; children: React.ReactNo
         <aside className={`${open ? "block" : "hidden"} w-full shrink-0 border-b border-neutral-200 bg-white p-3 md:block md:w-56 md:border-r md:border-b-0 dark:border-white/10 dark:bg-neutral-900`}>
           <nav className="space-y-1">{links}</nav>
           <p className="mt-6 px-3 text-[11px] leading-5 text-neutral-500 dark:text-neutral-400">
-            Every row is read from the database and the chain when the page renders. Nothing is cached, and nothing here can charge, revoke or edit.
+            Every row is read from the database and the chain when the page renders. Nothing is cached. The review queue is the only page that can change anything; everywhere else is read-only.
           </p>
         </aside>
         <main className={`${open ? "hidden md:block" : "block"} min-w-0 flex-1 p-4 md:p-6`}>{children}</main>

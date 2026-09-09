@@ -1,4 +1,4 @@
-import { loadSnapshot, type ChargeRow } from "@/lib/dashboard-data";
+import { loadCharges, type ChargeRow } from "@/lib/dashboard-data";
 import { Empty, Hash, PageHeader, fmt } from "@/components/dashboard/ui";
 
 export const dynamic = "force-dynamic";
@@ -7,7 +7,7 @@ export const runtime = "nodejs";
 // The grouping is the product idea: every failure is classified from chain
 // state before any gas is spent, and each class has its own disposition.
 export default async function Failures() {
-  const { charges } = await loadSnapshot();
+  const { charges } = await loadCharges();
   const failed = charges.filter((c) => c.state.startsWith("failed"));
   const g = {
     terminal: failed.filter((c) => c.state === "failed_terminal"),

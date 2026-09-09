@@ -20,7 +20,12 @@ export function config() {
 }
 
 export function publicClient() {
-  return createPublicClient({ chain: baseSepolia, transport: http(config().rpcUrl) });
+  // Public RPCs throttle. Retry with backoff so one 429 does not fail a page
+  // render or a worker tick; the alternative is a 500 that looks like a bug.
+  return createPublicClient({
+    chain: baseSepolia,
+    transport: http(config().rpcUrl, { retryCount: 3, retryDelay: 400, timeout: 20_000 }),
+  });
 }
 
 /** Wallet client for the executor. Signs locally; never used to hold funds. */

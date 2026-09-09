@@ -15,7 +15,11 @@
     "migrate": "node --env-file=.env packages/db/src/migrate.js",
     "worker": "node --env-file=.env apps/worker/src/index.js",
     "cli": "node --env-file=.env apps/cli/src/index.js",
-    "check:docs": "node scripts/check-doc-citations.mjs"
+    "check:docs": "node scripts/check-doc-citations.mjs",
+    "drill:matching": "node --env-file=.env scripts/phase2-drills.mjs",
+    "drill:alerts": "node --env-file=.env scripts/phase2-alerts-drills.mjs",
+    "drill:dashboard": "node --env-file=.env scripts/phase2-dashboard-drills.mjs",
+    "check:degradation": "cd apps/web && BASE_SEPOLIA_RPC_URL=http://127.0.0.1:9 npx tsx --conditions=react-server --env-file=../../.env ../../scripts/check-rpc-degradation.mts && npx tsx --conditions=react-server --env-file=../../.env ../../scripts/check-rpc-degradation.mts"
   },
   "devDependencies": {
     "shadcn": "^4.21.0"

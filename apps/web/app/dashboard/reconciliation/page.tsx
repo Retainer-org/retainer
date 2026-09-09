@@ -1,11 +1,11 @@
-import { loadSnapshot } from "@/lib/dashboard-data";
+import { loadCharges } from "@/lib/dashboard-data";
 import { DataTable, Empty, Hash, Note, PageHeader, Pill, fmt } from "@/components/dashboard/ui";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
 
 export default async function Reconciliation() {
-  const snap = await loadSnapshot();
+  const snap = await loadCharges();
   const rows = snap.charges.filter((c) => c.attemptSummary.length > 0 || c.state === "confirmed");
   return (
     <>

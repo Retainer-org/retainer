@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { loadSnapshot } from "@/lib/dashboard-data";
+import { loadCharges } from "@/lib/dashboard-data";
 import { DataTable, Empty, Hash, Note, PageHeader, Pill, StatePill, fmt, usdc } from "@/components/dashboard/ui";
 
 export const dynamic = "force-dynamic";
@@ -9,7 +9,7 @@ export const runtime = "nodejs";
 // failed pre-flight -- never broadcast, no gas spent -- live on /failures with
 // their disposition, so each charge appears in exactly one place.
 export default async function Charges() {
-  const { charges } = await loadSnapshot();
+  const { charges } = await loadCharges();
   const attempted = charges.filter((c) => !c.state.startsWith("failed"));
   const failed = charges.length - attempted.length;
   return (

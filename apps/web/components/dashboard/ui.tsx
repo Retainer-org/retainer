@@ -46,9 +46,9 @@ export function StatePill({ state }: { state: string }) {
   return <Pill t={t}>{state}</Pill>;
 }
 export function OnchainPill({ state }: { state: OnchainState }) {
-  const label = { active: "active", revoked: "revoked", expired: "expired", not_started: "not yet started", not_registered: "signed, not registered" }[state];
-  const t = state === "active" ? "good" : state === "revoked" || state === "expired" ? "bad" : "muted";
-  return <Pill t={t}>{label}</Pill>;
+  const label = { active: "active", revoked: "revoked", expired: "expired", not_started: "not yet started", not_registered: "signed, not registered", unknown: "unknown — RPC unreachable" }[state];
+  const t = state === "active" ? "good" : state === "revoked" || state === "expired" ? "bad" : state === "unknown" ? "warn" : "muted";
+  return <Pill t={t} title={state === "unknown" ? "The chain could not be read on this render. Nothing is inferred from the absence of a reading." : undefined}>{label}</Pill>;
 }
 
 /* --------------------------------------------------------------- layout */
