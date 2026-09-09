@@ -14,6 +14,8 @@ export default function Limitations() {
         ["No invoices, plans, customers, tax, proration or refunds", "Retainer is a charge engine. None of these objects exist. Refunds in particular cannot be executed by a non-custodial layer, only instructed.", "Not built"],
         ["No re-authorisation or usage forecasting", "A cap that is too small is reported, not renegotiated. These are the next product decisions and depend on merchant conversations that have not happened.", "Not built"],
         ["Single executor", "One executor key per deployment. Multiple workers are serialised by an advisory lock; multiple executors are not supported.", "By design, for now"],
+        ["Reorgs are detectable, not handled", <>Incoming transfers are indexed at three confirmations and store their <C>block_hash</C>, so a reorg beneath an indexed transfer can be <i>detected</i>. Nothing automatically unwinds a match whose transfer no longer exists — a human would have to reverse it.</>, "Stated, not built"],
+        ["Watch matching never guesses", <>Only an exact remaining amount from a sender already linked to a customer is matched automatically. Everything else — ambiguous ties, amount mismatches, unknown senders — waits in a review queue. This is deliberate, but it means a merchant with many unlinked senders does manual work until the links are learned.</>, "By design"],
         ["Usage metering is storage only", <>A <C>usage_records</C> table and a sum at charge time. No rating, tiers or aggregation windows.</>, "By decision"],
       ]} />
 
@@ -45,6 +47,19 @@ export default function Limitations() {
         Base&apos;s documentation for spend permissions carries the note that &ldquo;Spend Permissions for Base App Apps are coming soon and
         will be supported in a future update.&rdquo; That is Coinbase&apos;s statement, not Retainer&apos;s. Today the primitive is reachable only from
         external web apps using the Base Account SDK. <b>When, or whether, it reaches Base App mini-apps is unknown.</b>
+      </P>
+
+      <H2 id="reorgs">Reorgs</H2>
+      <P>
+        Watch mode indexes incoming transfers at three confirmations, the same depth the charge reconciler uses, and stores each
+        transfer&apos;s <C>block_hash</C> alongside its block number. That makes a reorg beneath an already-indexed transfer
+        <i>detectable</i>: a later scan finding a different hash at the same height means the transfer, and any payment matched from
+        it, may no longer exist on chain. <Cite file="apps/worker/src/watcher.js" label="detectReorgs" />
+      </P>
+      <P>
+        <b>Detection is not handling.</b> Nothing automatically unwinds a match whose underlying transfer has vanished, and nothing
+        re-opens an expected payment that was settled by one. On Base at three confirmations this is unlikely rather than impossible,
+        and the honest position is to say so rather than to imply a guarantee the code does not provide.
       </P>
 
       <H2 id="verification">What has and has not been verified</H2>

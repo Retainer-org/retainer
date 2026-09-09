@@ -3,6 +3,10 @@ import { config } from '@retainer/chain';
 import { claimCharge, attemptCharge } from './charger.js';
 import { recoverOpenAttempts } from './recovery.js';
 import { indexEvents, confirmCharges } from './reconciler.js';
+import { indexIncomingTransfers } from './watcher.js';
+import { matchPendingTransfers } from './matcher.js';
+import { sweepExpectedPayments, settleFromConfirmedCharges } from './sweep.js';
+import { deliverAlerts } from './alerts.js';
 import { checkGasTank } from './gastank.js';
 
 const log = (o) => console.log(JSON.stringify({ ts: new Date().toISOString(), ...o }));
@@ -23,6 +27,27 @@ async function tick() {
   if (idx.indexed) log({ event: 'indexed', ...idx });
   const confirmed = await confirmCharges();
   if (confirmed.length) log({ event: 'confirmed', charges: confirmed });
+
+  // 2b. Watch mode: index incoming transfers, then attribute them. Indexing is
+  //     about what the chain says; matching is about what it means, so they are
+  //     separate steps and the matcher never auto-matches ambiguously.
+  const watched = await indexIncomingTransfers();
+  if (watched.indexed) log({ event: 'transfers_indexed', ...watched });
+  const matched = await matchPendingTransfers();
+  if (matched.length) log({ event: 'matched', results: matched });
+
+  // 2c. Expected payments: settle from confirmed charges, then age the rest.
+  //     A terminally failed pull and a watch payment that never arrived both
+  //     end up overdue here -- one path, not two.
+  const settled = await settleFromConfirmedCharges();
+  if (settled.length) log({ event: 'settled_from_charges', expectedPayments: settled });
+  const swept = await sweepExpectedPayments();
+  if (swept.becameDue.length || swept.becameOverdue.length) log({ event: 'swept', ...swept });
+
+  // 2d. Alerts. Delivery is retried; emission already happened in the same
+  //     transaction as the state change that caused it.
+  const delivered = await deliverAlerts();
+  if (delivered.length) log({ event: 'alerts', results: delivered });
 
   // 3. Gas tank -- an empty one stops billing silently.
   const tank = await checkGasTank();

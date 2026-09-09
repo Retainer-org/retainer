@@ -3,6 +3,11 @@
 import { formatUnits } from 'viem';
 import { query, close } from '@retainer/db';
 import { config, periodFor } from '@retainer/chain';
+import { matchPendingTransfers, resolveReview, classifyTransfer } from '../../worker/src/matcher.js';
+import { indexIncomingTransfers, watchAddress, detectReorgs } from '../../worker/src/watcher.js';
+import { sweepExpectedPayments, settleFromConfirmedCharges } from '../../worker/src/sweep.js';
+import { deliverAlerts, addDestination } from '../../worker/src/alerts.js';
+import { recentEvents } from '../../worker/src/events.js';
 import { checkGasTank } from '../../worker/src/gastank.js';
 import { indexEvents, confirmCharges } from '../../worker/src/reconciler.js';
 
@@ -96,6 +101,76 @@ async function main() {
       out(rows);
       break;
     }
+    // ---- phase 2: expected payments, watch mode, review, alerts ----
+    case 'customer-add': {
+      const r = await query('INSERT INTO customers (label) VALUES ($1) RETURNING id, label', [arg('label', 'unnamed')]);
+      out({ created: r.rows[0] }); break;
+    }
+    case 'customer-link': {
+      const r = await query(
+        `INSERT INTO customer_addresses (customer_id, chain_id, address, note) VALUES ($1,$2,$3,$4)
+         ON CONFLICT (chain_id, address) DO NOTHING RETURNING id, customer_id, address`,
+        [arg('customer'), config().chainId, arg('address'), arg('note', 'linked via cli')]);
+      out({ linked: r.rows[0] ?? 'already linked to a customer' }); break;
+    }
+    case 'customers': out((await query(
+      `SELECT c.id, c.label, array_remove(array_agg(ca.address), NULL) AS addresses
+         FROM customers c LEFT JOIN customer_addresses ca ON ca.customer_id = c.id
+        GROUP BY c.id, c.label ORDER BY c.id`)).rows); break;
+
+    case 'expect': {
+      // Create an expected payment. Watch fulfilment needs no permission.
+      const cfg = config();
+      const dueIn = Number(arg('due-in-seconds', '0'));
+      const r = await query(
+        `INSERT INTO expected_payments
+           (customer_id, amount_expected, token, chain_id, due_date, lead_time_seconds, state, fulfilment, permission_id, reference)
+         VALUES ($1,$2,$3,$4, now() + make_interval(secs => $5), $6, $7, $8, $9, $10)
+         RETURNING id, customer_id, amount_expected, due_date, state::text state, fulfilment::text fulfilment`,
+        [arg('customer'), arg('amount'), cfg.usdc, cfg.chainId, dueIn,
+         Number(arg('lead-time', '259200')),
+         dueIn > 0 ? 'upcoming' : 'due',
+         arg('fulfilment', 'watch'), arg('permission') ?? null, arg('reference') ?? null]);
+      out({ created: r.rows[0] }); break;
+    }
+    case 'expected': out((await query(
+      `SELECT ep.id, ep.customer_id, ep.amount_expected, ep.amount_settled, ep.state::text state,
+              ep.fulfilment::text fulfilment, ep.due_date, ep.reference
+         FROM expected_payments ep ORDER BY ep.id DESC LIMIT $1`, [Number(arg('limit', 30))])).rows); break;
+
+    case 'watch-add': out(await watchAddress({ address: arg('address'), label: arg('label') })); break;
+    case 'watch-index': out(await indexIncomingTransfers(arg('from') ? { fromBlock: Number(arg('from')) } : {})); break;
+    case 'match': out(await matchPendingTransfers()); break;
+    case 'reorgs': out(await detectReorgs()); break;
+
+    case 'transfers': out((await query(
+      `SELECT id, tx_hash, from_address, value, match_state::text match_state, match_reason::text match_reason,
+              jsonb_array_length(candidates) AS candidate_count, block_number
+         FROM incoming_transfers ORDER BY block_number DESC, log_index DESC LIMIT $1`, [Number(arg('limit', 30))])).rows); break;
+
+    case 'review': out((await query(
+      `SELECT id, tx_hash, from_address, value, match_reason::text reason, candidates
+         FROM incoming_transfers WHERE match_state = 'needs_review' ORDER BY block_number, log_index`)).rows); break;
+
+    case 'resolve': out(await resolveReview({
+      transferId: arg('transfer'), action: arg('action', 'apply'),
+      expectedPaymentId: arg('expected'), amount: arg('amount'),
+      linkSender: arg('link-sender'), by: arg('by', 'review:cli') })); break;
+
+    case 'sweep': out({ settled: await settleFromConfirmedCharges(), ...(await sweepExpectedPayments()) }); break;
+
+    case 'dest-add': out(await addDestination({
+      channel: arg('channel', 'webhook'), target: arg('target'),
+      secret: arg('secret') ?? null,
+      eventTypes: arg('events') ? arg('events').split(',') : null })); break;
+    case 'deliver': out(await deliverAlerts()); break;
+    case 'events': out(await recentEvents(Number(arg('limit', 30)))); break;
+    case 'deliveries': out((await query(
+      `SELECT d.id, e.type, d.channel::text channel, d.target, d.state::text state, d.attempts,
+              d.last_status, d.transport, d.last_error, d.next_attempt_at
+         FROM deliveries d JOIN events e ON e.id = d.event_id
+        ORDER BY d.id DESC LIMIT $1`, [Number(arg('limit', 30))])).rows); break;
+
     case 'gas': out(await checkGasTank()); break;
     case 'reconcile': {
       const idx = await indexEvents(arg('from') ? { fromBlock: Number(arg('from')) } : {});
@@ -112,6 +187,19 @@ async function main() {
   ledger                        confirmed charges -> tx hashes
   audit        [--limit n]      consent + charge audit trail
   gas                           executor gas tank
+  --- phase 2 ---
+  customer-add  --label L                     customers
+  customer-link --customer N --address 0x..   link a sender to a customer
+  expect        --customer N --amount U [--fulfilment watch|pull] [--due-in-seconds S]
+  expected      [--limit n]                   expected payments
+  watch-add     --address 0x.. [--label L]    register a receiving address
+  watch-index   [--from block]                index incoming transfers
+  match                                       classify pending transfers
+  transfers | review                          indexed transfers / review queue
+  resolve       --transfer N --action apply|ignore [--expected M] [--amount U] [--link-sender C]
+  sweep                                       settle from charges, then age to due/overdue
+  dest-add      --channel webhook|email --target T [--secret S] [--events a,b]
+  deliver | deliveries | events               alert delivery
   reconcile    [--from block]   index events and confirm`);
   }
   await close();

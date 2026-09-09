@@ -4,6 +4,7 @@ import {
   spendRouterAbi, extractSelector, modeFromSelector, selectorName, toStruct, periodFor,
 } from '@retainer/chain';
 import { tx, audit } from '@retainer/db';
+import { emit } from './events.js';
 import { allocateNonce } from './nonce.js';
 
 /** How a failure mode maps onto charge state and when (if ever) to try again. */
@@ -96,6 +97,15 @@ async function recordFailure(row, mode, detail, retryAt) {
     await audit(c, { actor: 'executor', event: `charge.failed.${mode}`,
       permissionId: row.permission_id, chargeId: row.id,
       detail: { mode, detail, disposition: d.state, nextAttemptAt: d.nextAttemptAt } });
+
+    // The alert carries the classifier's verdict rather than restating it:
+    // mode and disposition come straight from classify() and dispositionFor().
+    const ep = (await c.query('SELECT expected_payment_id FROM charges WHERE id = $1', [row.id])).rows[0];
+    await emit(c, { type: 'charge.failed', chargeId: row.id,
+      expectedPaymentId: ep?.expected_payment_id ?? null,
+      payload: { mode, detail, disposition: d.state,
+                 next_attempt_at: d.nextAttemptAt ? d.nextAttemptAt.toISOString() : null,
+                 attempts: Number(row.attempts) + 1, permission_hash: row.permission_hash ?? null } });
   });
   return { outcome: 'failed', mode, detail, disposition: d.state };
 }
