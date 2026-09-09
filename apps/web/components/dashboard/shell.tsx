@@ -22,7 +22,8 @@ const fmt = (v: string) => new Date(v).toISOString().slice(0, 19) + "Z";
  * footer. The top bar is sticky in normal flow, so content never scrolls
  * underneath it.
  */
-export function Shell({ ctx, reviewCount = 0, children }: { ctx: Context; reviewCount?: number; children: React.ReactNode }) {
+export function Shell({ ctx, reviewCount = 0, canWrite = false, children }:
+  { ctx: Context; reviewCount?: number; canWrite?: boolean; children: React.ReactNode }) {
   const path = usePathname();
   const [open, setOpen] = useState(false);
 
@@ -76,8 +77,9 @@ export function Shell({ ctx, reviewCount = 0, children }: { ctx: Context; review
           <p className="mt-6 px-3 text-[11px] leading-5 text-neutral-500 dark:text-neutral-400">
             Nothing is cached; every page queries on render. Each page states its own source, because they differ: only <b>Permissions</b> reads
             the chain at render time. The rest read the database, where a figure is only ever written after on-chain confirmation. The block
-            height above is a live read on every route and says <i>unavailable</i> when the RPC cannot be reached. The <b>Review queue</b> is
-            the only page that can change anything.
+            height above is a live read on every route and says <i>unavailable</i> when the RPC cannot be reached. {canWrite
+              ? <> The <b>Review queue</b> is the only page that can change anything.</>
+              : <> Nothing here can be changed: the review actions are disabled in this deployment.</>}
           </p>
         </aside>
         <main className={`${open ? "hidden md:block" : "block"} min-w-0 flex-1 p-4 md:p-6`}>{children}</main>

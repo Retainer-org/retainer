@@ -42,3 +42,7 @@ templates/
 aceternity/
 aceternity-templates/
 **/aceternity-pro/
+
+# Vercel project link (contains project/org ids)
+.vercel
+.env*

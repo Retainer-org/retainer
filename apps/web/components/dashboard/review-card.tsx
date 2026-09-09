@@ -51,7 +51,7 @@ function Feedback({ state }: { state: { ok: boolean; detail?: string; error?: st
   );
 }
 
-export function ReviewCard({ row, customers }: { row: ReviewRow; customers: CustomerRow[] }) {
+export function ReviewCard({ row, customers, disabled = false }: { row: ReviewRow; customers: CustomerRow[]; disabled?: boolean }) {
   const meta = REASONS[row.reason] ?? { title: row.reason, why: "", tone: "muted" as const };
   const [applyState, applyAction, applying] = useActionState(applyToPayment, null);
   const [ignoreState, ignoreAction, ignoring] = useActionState(markNotAPayment, null);
@@ -114,14 +114,14 @@ export function ReviewCard({ row, customers }: { row: ReviewRow; customers: Cust
                       <input type="hidden" name="transferId" value={row.id} />
                       <input type="hidden" name="expectedPaymentId" value={c.expected_payment_id} />
                       <label className="text-[11px] text-neutral-500 dark:text-neutral-400">apply</label>
-                      <input name="amount" defaultValue={row.value} inputMode="numeric"
+                      <input name="amount" defaultValue={row.value} inputMode="numeric" disabled={disabled}
                         className="w-36 rounded border border-neutral-300 bg-white px-2 py-1 font-mono text-xs text-neutral-900 dark:border-neutral-700 dark:bg-neutral-900 dark:text-neutral-100" />
                       <span className="text-[11px] text-neutral-500 dark:text-neutral-400">
                         base units — the whole transfer is {usdc(row.value)}; lower settles a partial, higher records surplus
                       </span>
-                      <button type="submit" disabled={applying}
+                      <button type="submit" disabled={applying || disabled}
                         className="rounded-md bg-neutral-900 px-3 py-1.5 text-xs font-medium text-white disabled:opacity-50 dark:bg-white dark:text-black">
-                        {applying ? "Applying…" : "Apply"}
+                        {disabled ? "Disabled" : applying ? "Applying…" : "Apply"}
                       </button>
                     </form>
                   )}
@@ -142,7 +142,7 @@ export function ReviewCard({ row, customers }: { row: ReviewRow; customers: Cust
         </p>
         <form action={linkAction} className="mt-2 flex flex-wrap items-center gap-2">
           <input type="hidden" name="transferId" value={row.id} />
-          <select name="customerId" value={linkTarget} onChange={(e) => setLinkTarget(e.target.value)}
+          <select name="customerId" value={linkTarget} onChange={(e) => setLinkTarget(e.target.value)} disabled={disabled}
             className="rounded border border-neutral-300 bg-white px-2 py-1 text-xs text-neutral-900 dark:border-neutral-700 dark:bg-neutral-900 dark:text-neutral-100">
             <option value="">choose a customer…</option>
             {customers.map((c) => (
@@ -158,7 +158,7 @@ export function ReviewCard({ row, customers }: { row: ReviewRow; customers: Cust
             ))}
           </select>
           {row.candidates.some((c) => c.expected_payment_id) && (
-            <select name="expectedPaymentId"
+            <select name="expectedPaymentId" disabled={disabled}
               className="rounded border border-neutral-300 bg-white px-2 py-1 text-xs text-neutral-900 dark:border-neutral-700 dark:bg-neutral-900 dark:text-neutral-100">
               <option value="">link only</option>
               {row.candidates.filter((c) => c.expected_payment_id).map((c) => (
@@ -167,9 +167,9 @@ export function ReviewCard({ row, customers }: { row: ReviewRow; customers: Cust
             </select>
           )}
           <input type="hidden" name="amount" value={row.value} />
-          <button type="submit" disabled={linking || !linkTarget}
+          <button type="submit" disabled={linking || disabled || !linkTarget}
             className="rounded-md bg-brand-primary px-3 py-1.5 text-xs font-medium text-white disabled:opacity-50">
-            {linking ? "Linking…" : "Link sender"}
+            {disabled ? "Disabled" : linking ? "Linking…" : "Link sender"}
           </button>
         </form>
         <Feedback state={linkState} />
@@ -178,9 +178,9 @@ export function ReviewCard({ row, customers }: { row: ReviewRow; customers: Cust
       {/* not a payment */}
       <form action={ignoreAction} className="mt-3 flex items-center gap-3">
         <input type="hidden" name="transferId" value={row.id} />
-        <button type="submit" disabled={ignoring}
+        <button type="submit" disabled={ignoring || disabled}
           className="rounded-md px-3 py-1.5 text-xs font-medium text-neutral-600 ring-1 ring-neutral-300 hover:bg-neutral-50 disabled:opacity-50 dark:text-neutral-300 dark:ring-neutral-700 dark:hover:bg-neutral-800">
-          {ignoring ? "Recording…" : "Not a payment"}
+          {disabled ? "Disabled" : ignoring ? "Recording…" : "Not a payment"}
         </button>
         <span className="text-[11px] text-neutral-500 dark:text-neutral-400">Kept on record and marked ignored, never deleted.</span>
       </form>

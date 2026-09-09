@@ -204,7 +204,24 @@ export async function matchPendingTransfers({ limit = 50 } = {}) {
  * `linkSender` is the learning loop: link this sender to the customer and an
  * identical future transfer auto-matches.
  */
+/**
+ * Review writes are the only mutations the dashboard can perform, and the
+ * public deployment has no authentication in front of them. So the write path
+ * is an explicit opt-in rather than something trusted by default: unset means
+ * denied, which makes a new or misconfigured deployment read-only by accident
+ * rather than writable by accident.
+ *
+ * Local work -- the CLI, the drills -- opts in through .env.
+ */
+export function reviewWritesEnabled() {
+  return process.env.RETAINER_ENABLE_REVIEW_WRITES === 'true';
+}
+
+export const REVIEW_WRITES_DISABLED =
+  'Review actions are disabled in this deployment. The matching engine still classifies transfers; only the human resolution path is turned off.';
+
 export async function resolveReview({ transferId, action, expectedPaymentId, amount, linkSender, by = 'review:operator' }) {
+  if (!reviewWritesEnabled()) throw new Error(REVIEW_WRITES_DISABLED);
   return tx(async (c) => {
     const t = (await q(c, `SELECT * FROM incoming_transfers WHERE id = $1 FOR UPDATE`, [transferId]))[0];
     if (!t) throw new Error(`transfer ${transferId} not found`);
