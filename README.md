@@ -225,20 +225,47 @@ The default export condition resolves to the Node build, which pulls in
 `contracts/lib/` is gitignored — dependencies are reinstalled from the exact
 revisions pinned in `install-deps.sh`, which match upstream's `foundry.lock`.
 
-### Checking the docs against the code
+### Checking the claims against reality
 
-Every claim in `/docs` cites a file and line, a contract, or a transaction.
-Those citations drift silently when code moves, so they are checkable:
+Every claim in `/docs` cites a file and line, a contract, or a transaction, and
+the dashboard states what each page reads. All of that drifts silently when the
+code moves, so all of it is checkable:
 
 ```bash
-npm run check:docs          # resolves every citation; exits 1 if any is stale
-npm run check:docs -- --all # print each citation with its cited source line
+npm run check                # everything below
+npm run check:docs           # every citation resolves to a real file and line
+npm run check:docs -- --all  # print each citation with its cited source line
+npm run check:txs            # every cited hash still resolves on Base Sepolia
+npm run check:sources        # each dashboard page's declared source is its real one
+npm run check:degradation    # a dead RPC degrades; it never guesses
 ```
 
-Filesystem only — no server, no database, no network — so it runs in CI. It
-verifies each cited file exists and each cited line is in range, prints the
-line so the claim can be read against its source, and checks that transaction
-hashes and addresses are the right shape.
+`check:docs` is filesystem-only — no server, database or network — so it runs in
+CI. The other three need `.env`: `check:txs` asks the chain, and asserts the
+opposite claim too (the crash-B attempt cited as *never mined* must still not
+resolve, and the vendored EIP-712 typehash must still equal the deployed
+manager's). `check:sources` fails if a page claims "database only" while calling
+the chain-reading loader. `check:degradation` points the RPC at a dead port and
+asserts the dashboard still renders from the database, reporting `unknown`
+rather than inferring a value from a missing reading — then re-runs against the
+live RPC as its own negative control.
+
+### Drills
+
+```bash
+npm run drill:matching   # all six matching cases, against real transfers
+npm run drill:alerts     # overdue detection, webhook signing and retry, email transport
+npm run drill:dashboard  # the five review actions, over real HTTP
+npm run prune:drills     # report leftover drill rows (add -- --apply to remove)
+```
+
+Every assertion has a negative control that has been confirmed to actually fail;
+a check that passes because it never ran is worse than no check. Each drill
+sweeps before it starts and again when it finishes, so a drill run leaves no
+rows behind — residue on the dashboard is indistinguishable from a merchant's
+own data, and eventually gets mistaken for it. `prune:drills` performs the same
+sweep inside one transaction that re-reads every publicly cited row field by
+field and rolls back unless they are byte-identical.
 
 ## Vendored contracts
 

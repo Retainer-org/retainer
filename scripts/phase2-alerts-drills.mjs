@@ -12,6 +12,7 @@ import { config } from '@retainer/chain';
 import { query, close } from '@retainer/db';
 import { sweepExpectedPayments } from '../apps/worker/src/sweep.js';
 import { deliverAlerts, addDestination, signPayload, verifySignature, renderEmail } from '../apps/worker/src/alerts.js';
+import { sweepDrillResidue, assertNoResidue } from './lib/drill-cleanup.mjs';
 
 const cfg = config();
 const rows = async (sql, p = []) => (await query(sql, p)).rows;
@@ -40,8 +41,7 @@ const url = `http://127.0.0.1:${server.address().port}/hook`;
 const SECRET = 'drill-secret-not-a-real-key';
 
 console.log('=== setup ===');
-await query(`DELETE FROM deliveries WHERE target IN (SELECT target FROM alert_destinations WHERE target LIKE 'http://127.0.0.1%' OR target = 'ops@example.test')`);
-await query(`DELETE FROM alert_destinations WHERE target LIKE 'http://127.0.0.1%' OR target = 'ops@example.test'`);
+await sweepDrillResidue();
 const hook = await addDestination({ channel: 'webhook', target: url, secret: SECRET });
 const mail = await addDestination({ channel: 'email', target: 'ops@example.test' });
 console.log(`  webhook -> ${url}\n  email   -> ops@example.test`);
@@ -124,6 +124,12 @@ check('idempotent fan-out: one delivery row per (event, destination)', dupes.len
 const rendered = renderEmail({ type: 'charge.failed', charge_id: '3', payload: { mode: 'INSUFFICIENT_BALANCE', disposition: 'failed_retryable', detail: 'balance=1 want=2', next_attempt_at: '2026-09-09T12:00:00Z' } });
 check('charge.failed alert carries the classifier verdict, not a restatement',
   rendered.text.includes('INSUFFICIENT_BALANCE') && rendered.text.includes('failed_retryable'), rendered.subject);
+
+// ---------------------------------------------------------------- teardown
+console.log('\n=== teardown ===');
+await sweepDrillResidue();
+const left = await assertNoResidue();
+check('the drill leaves no rows behind', left === 0, `${left} remaining`);
 
 console.log(`\nRESULT: ${pass} passed, ${fail} failed  (delivery rounds: ${rounds})`);
 server.close();

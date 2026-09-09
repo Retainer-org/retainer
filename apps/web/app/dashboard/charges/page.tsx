@@ -14,7 +14,7 @@ export default async function Charges() {
   const failed = charges.length - attempted.length;
   return (
     <>
-      <PageHeader title="Charges" sub="Requested is what the engine asked for; settled is what the on-chain SpendRouted event says moved. They must match."
+      <PageHeader title="Charges" reads="db" sub="Requested is what the engine asked for; settled is what the on-chain SpendRouted event says moved. They must match."
         aside={<span className="font-mono text-xs text-neutral-500 dark:text-neutral-400">{attempted.length} attempted · {attempted.filter((c) => c.state === "confirmed").length} confirmed</span>} />
       {failed > 0 && <Note>{failed} charge{failed === 1 ? "" : "s"} failed before broadcast and {failed === 1 ? "is" : "are"} listed with {failed === 1 ? "its" : "their"} classification on <Link href="/dashboard/failures" className="text-brand-primary hover:underline">Failures</Link>, not here.</Note>}
       {attempted.length === 0 ? <Empty>No charges have been attempted.</Empty> : (

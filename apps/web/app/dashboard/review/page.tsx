@@ -13,7 +13,7 @@ export default async function Review() {
   return (
     <>
       <PageHeader
-        title="Review queue"
+        title="Review queue" reads="db" writes
         sub="Transfers the matcher declined to attribute automatically. It only auto-matches an exact outstanding amount from a sender already linked to a customer; anything less certain waits here with the evidence it weighed. A wrong automatic match is worse than none, because it silently marks a customer paid who has not paid."
         aside={<span className="font-mono text-xs text-neutral-500 dark:text-neutral-400">{queue.length} awaiting review</span>}
       />

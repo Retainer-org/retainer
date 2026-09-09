@@ -14,6 +14,7 @@ import { publicClient, config, erc20Abi } from '@retainer/chain';
 import { query, pool, close } from '@retainer/db';
 import { indexIncomingTransfers } from '../apps/worker/src/watcher.js';
 import { matchPendingTransfers, classifyTransfer } from '../apps/worker/src/matcher.js';
+import { sweepDrillResidue, assertNoResidue } from './lib/drill-cleanup.mjs';
 
 const cfg = config();
 const pub = publicClient();
@@ -97,12 +98,10 @@ const findByTx = async (h) => (await rows('SELECT * FROM incoming_transfers WHER
 
 // ---------------------------------------------------------------- setup
 console.log('=== setup ===');
-// Repeatability: a previous run leaves SENDER_B linked and its obligations open,
-// which would silently change what later cases are even testing.
-await query('DELETE FROM customer_addresses WHERE chain_id=$1 AND lower(address)=lower($2)', [cfg.chainId, B.address]);
-const retired = await rows(`UPDATE expected_payments SET state='void'
-   WHERE reference LIKE 'drill:%' AND state NOT IN ('paid','void') RETURNING id`);
-if (retired.length) console.log(`  retired ${retired.length} obligation(s) from a previous run`);
+// Repeatability: clear anything a previous or crashed run left behind. Residue
+// is not merely untidy here -- a stale obligation or a still-linked sender
+// silently changes what the later cases are even testing.
+await sweepDrillResidue();
 const stale = await rows(`UPDATE incoming_transfers SET match_state='ignored', resolved_by='drill:stale-from-aborted-run', resolved_at=now()
    WHERE match_state='pending' RETURNING id`);
 if (stale.length) console.log(`  ignored ${stale.length} transfer(s) left pending by an aborted run`);
@@ -249,6 +248,15 @@ const settledUnconfirmed = await rows(`SELECT count(*)::int c FROM expected_paym
   WHERE ep.amount_settled > 0 AND NOT EXISTS (SELECT 1 FROM payment_matches pm WHERE pm.expected_payment_id=ep.id)
     AND NOT EXISTS (SELECT 1 FROM charges ch WHERE ch.expected_payment_id=ep.id AND ch.state='confirmed')`);
 check('nothing settled without a confirmed charge or a match', settledUnconfirmed[0].c === 0, `${settledUnconfirmed[0].c} unbacked`);
+
+// ---------------------------------------------------------------- teardown
+// The drill's transfers are real and stay on-chain; what is removed is the
+// database residue that would otherwise be indistinguishable from a merchant's
+// own data on the dashboard.
+console.log('\n=== teardown ===');
+await sweepDrillResidue();
+const left = await assertNoResidue();
+check('the drill leaves no rows behind', left === 0, `${left} remaining`);
 
 console.log(`\nRESULT: ${pass} passed, ${fail} failed`);
 await close();

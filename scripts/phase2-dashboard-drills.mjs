@@ -43,10 +43,19 @@ function actionIds(dir, acc = {}) {
   return acc;
 }
 
-/** One $ACTION_KEY from the live page; React expects the field to be present. */
+/**
+ * One $ACTION_KEY from the live page, fetched lazily.
+ *
+ * React only renders the field alongside a form, so an empty queue has none --
+ * which is the normal state of a pruned database. Fetching it on first use
+ * means the key is read once a fixture exists, rather than asserting against a
+ * page that legitimately has nothing on it.
+ */
+let KEY_CACHE = null;
 async function actionKey() {
+  if (KEY_CACHE !== null) return KEY_CACHE;
   const html = await (await fetch(REVIEW)).text();
-  return html.match(/name="\$ACTION_KEY" value="([^"]+)"/)?.[1] ?? '';
+  return (KEY_CACHE = html.match(/name="\$ACTION_KEY" value="([^"]+)"/)?.[1] ?? '');
 }
 
 /**
@@ -54,12 +63,12 @@ async function actionKey() {
  * page URL, no Next-Action header, with the bound previous state ([null], from
  * useActionState) carried in $ACTION_<n>:1.
  */
-async function post(id, key, fields) {
+async function post(id, _key, fields) {
   const fd = new FormData();
   fd.set('$ACTION_REF_1', '');
   fd.set('$ACTION_1:0', JSON.stringify({ id, bound: '$@1' }));
   fd.set('$ACTION_1:1', '[null]');
-  fd.set('$ACTION_KEY', key);
+  fd.set('$ACTION_KEY', await actionKey());
   for (const [k, v] of Object.entries(fields)) if (v !== undefined) fd.set(k, String(v));
   const res = await fetch(REVIEW, { method: 'POST', body: fd });
   return { status: res.status, body: await res.text() };
@@ -118,8 +127,7 @@ console.log('=== wiring ===');
 check('all three server actions found in the dev output',
   !!(ids.applyToPayment && ids.markNotAPayment && ids.linkSenderToCustomer),
   Object.entries(ids).map(([k, v]) => `${k}=${v.slice(0, 8)}…`).join(' '));
-const KEY = await actionKey();
-check('the review page renders a usable $ACTION_KEY', !!KEY);
+const KEY = null;   // fetched lazily on first post, once a fixture exists
 
 try {
   // ------------------------------------------------------- 1. apply in full
@@ -129,6 +137,7 @@ try {
     const tr = await transfer({ from: addr(1), value: 100000, reason: 'unknown_sender',
       candidates: [{ expected_payment_id: String(ep), remaining: '100000', delta: '0' }] });
     await post(ids.applyToPayment, KEY, { transferId: tr, expectedPaymentId: ep, amount: 100000 });
+    check('the review page rendered a usable $ACTION_KEY once the queue was non-empty', !!(await actionKey()));
     const s = await state(ep), m = await matches(tr);
     check('the obligation is settled in full', s.s === 'paid' && s.amount_settled === '100000', `${s.s}/${s.amount_settled}`);
     check('the match is recorded as a human decision, not an auto-match',

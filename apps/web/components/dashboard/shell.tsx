@@ -74,7 +74,10 @@ export function Shell({ ctx, reviewCount = 0, children }: { ctx: Context; review
         <aside className={`${open ? "block" : "hidden"} w-full shrink-0 border-b border-neutral-200 bg-white p-3 md:block md:w-56 md:border-r md:border-b-0 dark:border-white/10 dark:bg-neutral-900`}>
           <nav className="space-y-1">{links}</nav>
           <p className="mt-6 px-3 text-[11px] leading-5 text-neutral-500 dark:text-neutral-400">
-            Every row is read from the database and the chain when the page renders. Nothing is cached. The review queue is the only page that can change anything; everywhere else is read-only.
+            Nothing is cached; every page queries on render. Each page states its own source, because they differ: only <b>Permissions</b> reads
+            the chain at render time. The rest read the database, where a figure is only ever written after on-chain confirmation. The block
+            height above is a live read on every route and says <i>unavailable</i> when the RPC cannot be reached. The <b>Review queue</b> is
+            the only page that can change anything.
           </p>
         </aside>
         <main className={`${open ? "hidden md:block" : "block"} min-w-0 flex-1 p-4 md:p-6`}>{children}</main>

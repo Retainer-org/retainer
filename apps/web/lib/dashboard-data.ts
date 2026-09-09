@@ -4,8 +4,14 @@ import { query } from "@retainer/db";
 import { publicClient, config, spendPermissionManagerAbi, toStruct } from "@retainer/chain";
 
 /**
- * Data layer for the merchant dashboard. Reads the real database and the live
- * chain at request time. Nothing here is mocked, seeded or padded.
+ * Data layer for the merchant dashboard. Nothing here is mocked, seeded or
+ * padded, and nothing is cached.
+ *
+ * The two sources are not interchangeable, and which loader touches which
+ * matters: loadContext reads the chain head, loadSnapshot reads permission
+ * state from the SpendPermissionManager, and everything else is database-only.
+ * Keep it that way -- making every page pay for a multicall it does not render
+ * is what previously exhausted the public RPC's rate limit.
  *
  * Every timestamp leaves this module as a full ISO-8601 UTC string. pg hands
  * back timestamptz as a JS Date, and String(date) is what produced

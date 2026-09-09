@@ -22,7 +22,7 @@ export default async function Expected() {
   return (
     <>
       <PageHeader
-        title="Expected payments"
+        title="Expected payments" reads="db"
         sub="What is owed, when it is due, and whether it arrived. Satisfied either by a pull against a spend permission or by a matched incoming transfer — both first-class, so a failed pull and a payment that never arrived both end up overdue here."
         aside={<span className="font-mono text-xs text-neutral-500 dark:text-neutral-400">{all.length} total</span>}
       />

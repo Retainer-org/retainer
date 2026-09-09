@@ -10,7 +10,7 @@ export function Footer() {
     { title: "Project", items: [
       { title: "Source on GitHub", href: "https://github.com/Retainer-org/retainer" },
       { title: "Docs", href: "/docs" },
-      { title: "Dashboard (read-only)", href: "/dashboard" },
+      { title: "Dashboard", href: "/dashboard" },
       { title: "Signing harness (limited)", href: "/sign" },
     ]},
     { title: "On-chain", items: [

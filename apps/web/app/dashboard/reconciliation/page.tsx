@@ -9,7 +9,7 @@ export default async function Reconciliation() {
   const rows = snap.charges.filter((c) => c.attemptSummary.length > 0 || c.state === "confirmed");
   return (
     <>
-      <PageHeader title="Reconciliation" sub="A charge is marked paid by the reconciler only — after both SpendPermissionUsed and SpendRouted are indexed for its transaction and the router paid the intended recipient. Never on broadcast, never on receipt alone." />
+      <PageHeader title="Reconciliation" reads="db" sub="A charge is marked paid by the reconciler only — after both SpendPermissionUsed and SpendRouted are indexed for its transaction and the router paid the intended recipient. Never on broadcast, never on receipt alone." />
       <Note>
         <span className="font-mono">
           {snap.indexer

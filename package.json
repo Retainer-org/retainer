@@ -15,11 +15,15 @@
     "migrate": "node --env-file=.env packages/db/src/migrate.js",
     "worker": "node --env-file=.env apps/worker/src/index.js",
     "cli": "node --env-file=.env apps/cli/src/index.js",
+    "check": "npm run check:docs && npm run check:txs && npm run check:sources && npm run check:degradation",
     "check:docs": "node scripts/check-doc-citations.mjs",
+    "check:txs": "node --env-file=.env scripts/check-cited-transactions.mjs",
+    "check:sources": "node scripts/check-dashboard-sources.mjs",
+    "check:degradation": "cd apps/web && BASE_SEPOLIA_RPC_URL=http://127.0.0.1:9 npx tsx --conditions=react-server --env-file=../../.env ../../scripts/check-rpc-degradation.mts && npx tsx --conditions=react-server --env-file=../../.env ../../scripts/check-rpc-degradation.mts",
     "drill:matching": "node --env-file=.env scripts/phase2-drills.mjs",
     "drill:alerts": "node --env-file=.env scripts/phase2-alerts-drills.mjs",
     "drill:dashboard": "node --env-file=.env scripts/phase2-dashboard-drills.mjs",
-    "check:degradation": "cd apps/web && BASE_SEPOLIA_RPC_URL=http://127.0.0.1:9 npx tsx --conditions=react-server --env-file=../../.env ../../scripts/check-rpc-degradation.mts && npx tsx --conditions=react-server --env-file=../../.env ../../scripts/check-rpc-degradation.mts"
+    "prune:drills": "node --env-file=.env scripts/prune-drill-data.mjs"
   },
   "devDependencies": {
     "shadcn": "^4.21.0"

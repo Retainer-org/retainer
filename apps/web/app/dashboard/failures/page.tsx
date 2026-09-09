@@ -16,7 +16,7 @@ export default async function Failures() {
   };
   return (
     <>
-      <PageHeader title="Failed charges" sub="Classified before broadcast, so none of these cost gas. Terminal will not retry; deferred retries at the time shown; retrying backs off." aside={<span className="font-mono text-xs text-neutral-500 dark:text-neutral-400">{failed.length} failed</span>} />
+      <PageHeader title="Failed charges" reads="db" sub="Classified before broadcast, so none of these cost gas. Terminal will not retry; deferred retries at the time shown; retrying backs off." aside={<span className="font-mono text-xs text-neutral-500 dark:text-neutral-400">{failed.length} failed</span>} />
       {failed.length === 0 ? <Empty>No failed charges.</Empty> : (
         <div className="grid gap-4 lg:grid-cols-3">
           <Group title="Terminal — will not retry" note="Revoked or expired. The permission is gone; nothing the engine does can bring it back." rows={g.terminal} ring="ring-red-500/30" showNext={false} />

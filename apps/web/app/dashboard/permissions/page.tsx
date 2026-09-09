@@ -9,7 +9,7 @@ export default async function Permissions() {
   const active = permissions.filter((p) => p.onchain === "active").length;
   return (
     <>
-      <PageHeader title="Permissions" sub="On-chain state is read from the SpendPermissionManager at render time. Remaining is this period's cap minus what the contract says has been spent. Ordered by most recent activity; inactive test permissions sit at the bottom."
+      <PageHeader title="Permissions" reads="db+chain" sub="On-chain state is read from the SpendPermissionManager at render time. Remaining is this period's cap minus what the contract says has been spent. Ordered by most recent activity; inactive test permissions sit at the bottom."
         aside={<span className="font-mono text-xs text-neutral-500 dark:text-neutral-400">{permissions.length} total · {active} active</span>} />
       {permissions.length === 0 ? <Empty>No permissions in the database.</Empty> : (
         <DataTable

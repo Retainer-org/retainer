@@ -53,14 +53,50 @@ export function OnchainPill({ state }: { state: OnchainState }) {
 
 /* --------------------------------------------------------------- layout */
 
-export function PageHeader({ title, sub, aside }: { title: string; sub: string; aside?: ReactNode }) {
+/**
+ * What a route actually reads. Required, not optional: the dashboard's claim is
+ * that the words match reality, and the way that claim rots is a page quietly
+ * changing its data source while a blanket sentence elsewhere keeps saying
+ * "the database and the live chain". Making every page state its own source
+ * means the copy has to be edited when the loader is.
+ */
+export type Reads = "db" | "db+chain";
+
+const READS: Record<Reads, { label: string; detail: string; tone: "muted" | "brand" }> = {
+  db: {
+    label: "database only",
+    tone: "muted",
+    detail:
+      "No chain call is made for this page. Every settled figure shown was written only after on-chain confirmation, by the reconciler or the matcher.",
+  },
+  "db+chain": {
+    label: "database + live chain",
+    tone: "brand",
+    detail:
+      "Permission state is read from the SpendPermissionManager on every render. A row reads \u201Cunknown\u201D when that read fails, rather than falling back to a guess.",
+  },
+};
+
+export function PageHeader({ title, sub, reads, writes = false, aside }:
+  { title: string; sub: string; reads: Reads; writes?: boolean; aside?: ReactNode }) {
+  const r = READS[reads];
   return (
-    <div className="mb-6 flex flex-wrap items-end justify-between gap-3">
-      <div>
-        <h1 className="text-xl font-semibold text-neutral-900 dark:text-white">{title}</h1>
-        <p className="mt-1 max-w-3xl text-sm text-neutral-600 dark:text-neutral-400">{sub}</p>
+    <div className="mb-6">
+      <div className="flex flex-wrap items-end justify-between gap-3">
+        <div>
+          <h1 className="text-xl font-semibold text-neutral-900 dark:text-white">{title}</h1>
+          <p className="mt-1 max-w-3xl text-sm text-neutral-600 dark:text-neutral-400">{sub}</p>
+        </div>
+        {aside}
       </div>
-      {aside}
+      <p className="mt-3 flex flex-wrap items-baseline gap-2 text-[11px] leading-5 text-neutral-500 dark:text-neutral-400">
+        <Pill t={r.tone}>{r.label}</Pill>
+        {writes ? <Pill t="warn">writes</Pill> : <Pill t="muted">read-only</Pill>}
+        <span className="max-w-3xl">
+          {r.detail}
+          {writes && " The five review actions are the only writes anywhere in the dashboard."}
+        </span>
+      </p>
     </div>
   );
 }
