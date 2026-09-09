@@ -14,7 +14,8 @@
     "typecheck": "tsc -b",
     "migrate": "node --env-file=.env packages/db/src/migrate.js",
     "worker": "node --env-file=.env apps/worker/src/index.js",
-    "cli": "node --env-file=.env apps/cli/src/index.js"
+    "cli": "node --env-file=.env apps/cli/src/index.js",
+    "check:docs": "node scripts/check-doc-citations.mjs"
   },
   "devDependencies": {
     "shadcn": "^4.21.0"

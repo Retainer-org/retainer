@@ -225,6 +225,21 @@ The default export condition resolves to the Node build, which pulls in
 `contracts/lib/` is gitignored — dependencies are reinstalled from the exact
 revisions pinned in `install-deps.sh`, which match upstream's `foundry.lock`.
 
+### Checking the docs against the code
+
+Every claim in `/docs` cites a file and line, a contract, or a transaction.
+Those citations drift silently when code moves, so they are checkable:
+
+```bash
+npm run check:docs          # resolves every citation; exits 1 if any is stale
+npm run check:docs -- --all # print each citation with its cited source line
+```
+
+Filesystem only — no server, no database, no network — so it runs in CI. It
+verifies each cited file exists and each cited line is in range, prints the
+line so the claim can be read against its source, and checks that transaction
+hashes and addresses are the right shape.
+
 ## Vendored contracts
 
 We deploy **our own instance of the audited `SpendRouter`**, unmodified. We do
