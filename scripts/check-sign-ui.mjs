@@ -20,19 +20,20 @@ import { privateKeyToAccount, generatePrivateKey } from 'viem/accounts';
 
 const BASE = process.env.WEB_BASE_URL || 'http://localhost:3017';
 const CHROME = process.env.CHROME || '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome';
-const SEVEN702 = '0x2C5d65A0dA493e53E78c6c15866745a9CD83a33a';  // upgraded by MetaMask; registered and revoked #20
+const UNTRUSTED = '0x4036ad1dCe5721e081bEE28eb3d2F8e54254d62a'; // 7702, delegating to the CoinbaseSmartWallet implementation
 const RETURNING = '0xaC033336e519b69aA37E7a085E68951A50A5648B'; // upgraded by MetaMask; #18 revoked, #19 active
-const FRESH = privateKeyToAccount(generatePrivateKey()).address;   // a standard account with nothing registered
+const WITH_FUNDS = '0x2C5d65A0dA493e53E78c6c15866745a9CD83a33a'; // upgraded by MetaMask; #20 revoked, 20 USDC left in its smart account
+const FRESH = privateKeyToAccount(generatePrivateKey()).address;  // a standard account with nothing registered
 
 let pass = 0, fail = 0;
-const EXPECTED = 21;  // assertions in a complete run; fewer means the check stopped short
+const EXPECTED = 27;  // assertions in a complete run; fewer means the check stopped short
 const check = (l, ok, d = '') => { ok ? pass++ : fail++; console.log(`  [${ok ? 'PASS' : 'FAIL'}] ${l}${d ? ` — ${d}` : ''}`); };
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 // Injected before any page script runs.
 const MOCK = `(() => {
   const listeners = {};
-  const st = { accounts: [${JSON.stringify(SEVEN702)}], chainId: '0xc488', calls: [], rejectSwitchOnce: true };
+  const st = { accounts: [${JSON.stringify(UNTRUSTED)}], chainId: '0xc488', calls: [], rejectSwitchOnce: true };
   const emit = (ev, v) => (listeners[ev] || []).forEach((f) => f(v));
   const provider = {
     request: async ({ method, params }) => {
@@ -84,15 +85,14 @@ try {
   await until((t) => t.includes('Connect a wallet'));
   check('the scripted wallet is discovered over EIP-6963', await click('MetaMask'));
 
-  console.log('\n=== connected to a 7702-upgraded account, on the wrong network ===');
+  console.log('\n=== connected to an account delegating to an untrusted contract, on the wrong network ===');
   let t = await until((t) => t.includes('upgraded to a smart account'));
-  check('the connected account is shown prominently', t.includes('Connected account in MetaMask') && t.includes(SEVEN702));
+  check('the connected account is shown prominently', t.includes('Connected account in MetaMask') && t.includes(UNTRUSTED));
   check('the 7702 refusal is shown for that account', t.includes('upgraded to a smart account (EIP-7702)'));
+  check('it says the delegate is not one this deployment has verified', t.includes('not one this deployment has verified'));
   check('the refusal offers "Switch account in MetaMask"', t.includes('Switch account in MetaMask'));
   check('the refusal offers "Use a Base Account instead"', t.includes('Use a Base Account instead'));
   check('it says the account differs from the one that registered earlier in this session', t.includes('This is a different account') && t.includes('permission #19'));
-  t = await until((t) => t.includes('#20'));
-  check('its existing permissions are listed even though the owner is refused', t.includes('#20'));
   check('the auto-switch was declined, so the network check fails and offers a button', t.includes('Switch to Base Sepolia'));
 
   console.log('\n=== the network button ===');
@@ -110,19 +110,29 @@ try {
   check('the flow continues for the new account (funding and fingerprint steps)', t.includes('Put USDC in your smart account') && t.includes('Check the fingerprint'));
 
   console.log('\n=== the account changes inside the wallet (accountsChanged) ===');
-  await js(`window.__mock.st.accounts = [${JSON.stringify(SEVEN702)}]; window.__mock.emit('accountsChanged', [${JSON.stringify(SEVEN702)}])`);
-  t = await until((t) => t.includes('upgraded to a smart account'));
-  check('switching back in the wallet re-runs the checks: the refusal returns, live', t.includes(SEVEN702) && t.includes('upgraded to a smart account'));
+  const to = (a) => js(`window.__mock.st.accounts = [${JSON.stringify(a)}]; window.__mock.emit('accountsChanged', [${JSON.stringify(a)}])`);
+  await to(UNTRUSTED);
+  t = await until((t) => t.includes(UNTRUSTED) && t.includes('upgraded to a smart account'));
+  check('switching back in the wallet re-runs the checks: the refusal returns, live', t.includes(UNTRUSTED) && t.includes('upgraded to a smart account'));
   check('and the funding and fingerprint steps are gone again', !t.includes('Check the fingerprint'));
 
-  console.log('\n=== the returning customer, whose account MetaMask upgraded when they revoked ===');
-  await js(`window.__mock.st.accounts = [${JSON.stringify(RETURNING)}]; window.__mock.emit('accountsChanged', [${JSON.stringify(RETURNING)}])`);
-  t = await until((t) => t.includes(RETURNING) && t.includes('#19'));
-  check('their permissions are still listed', t.includes('#18') && t.includes('#19'));
-  const revokable = await js(`[...document.querySelectorAll('button')].some((b) => b.textContent.trim() === 'Revoke' && !b.disabled)`);
-  check('#19 can still be revoked from the page', revokable === true);
+  console.log('\n=== a returning customer MetaMask upgraded when they revoked: accepted ===');
+  await to(RETURNING);
+  t = await until((t) => t.includes(RETURNING) && t.includes('#19') && t.includes('Check the fingerprint'));
+  check('not refused: no 7702 refusal panel', !t.includes('upgraded to a smart account (EIP-7702)'));
+  check('the account check says why it is accepted', t.includes('verified delegator — accepted'));
+  check('their permissions are listed', t.includes('#18') && t.includes('#19'));
+  check('#19 can still be revoked from the page', await js(`[...document.querySelectorAll('button')].some((b) => b.textContent.trim() === 'Revoke' && !b.disabled)`) === true);
+  check('they can register again: the funding and fingerprint steps are shown', t.includes('Put USDC in your smart account') && t.includes('Check the fingerprint'));
   check('no "different account" notice for the account that registered in this session', !t.includes('This is a different account'));
-  check('the refusal says existing permissions keep working', t.includes('keep working'));
+
+  console.log('\n=== the other upgraded account, with 20 USDC left in its smart account ===');
+  await to(WITH_FUNDS);
+  t = await until((t) => t.includes(WITH_FUNDS) && t.includes('Withdraw'));
+  check('accepted too: no refusal panel', !t.includes('upgraded to a smart account (EIP-7702)'));
+  check('the owner is offered their money back: "Withdraw 20.00 USDC"', await js(`[...document.querySelectorAll('button')].some((b) => b.textContent.includes('Withdraw 20.00 USDC') && !b.disabled)`) === true);
+  check('and told it differs from the account that registered earlier in this session', t.includes('This is a different account'));
+  check('a deployment that can register shows no "not switched on" banner', !t.includes('Signing is not switched on'));
 
   const { result: { data } } = await send('Page.captureScreenshot', { format: 'png' }, S);
   const out = process.env.SIGN_UI_SHOT; if (out) { (await import('node:fs')).writeFileSync(out, Buffer.from(data, 'base64')); console.log(`\n  screenshot: ${out}`); }

@@ -41,6 +41,8 @@ export function publicPolicy(pol = policy()) {
     ...pol,
     allowance: pol.allowance.toString(),
     periodInDays: pol.periodSeconds / 86400,
+    // Registration needs the executor key. Saying so up front means no one signs into a refusal.
+    registrationEnabled: Boolean(process.env.EXECUTOR_PRIVATE_KEY),
   };
 }
 

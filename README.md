@@ -110,10 +110,12 @@ through `/sign`, end to end — no Base Account, and no Coinbase consent screen.
 
 Sign, charge and revoke are all proven with a browser wallet. One thing the session
 surfaced that no drill could: **MetaMask upgraded the account to EIP-7702 inside the
-revoke**, relaying it through its own `DelegationManager`. Existing permissions keep
-working, but a new registration from an upgraded account is refused until MetaMask's
-delegator is accepted — it has been tested and validates the signature, and whether to
-accept it is an open decision. See `/docs/wallets#metamask-upgrades`.
+revoke**, relaying it through its own `DelegationManager`. That would have stopped any
+customer who cancelled from ever registering again. MetaMask's delegator is now accepted
+as a deliberate, scoped exception: one hardcoded address, whose verified source checks
+signatures with plain ECDSA against the account's own address, pinned to the hash of the
+code that was reviewed — any other code, any other delegate, and any other contract
+account are still refused. See `/docs/wallets#metamask-upgrades`.
 
 The mechanism — an EOA-owned `CoinbaseSmartWallet`, a typed-data signature, and
 ERC-6492 deployment inside `approveWithSignature` — is described at `/docs/wallets`

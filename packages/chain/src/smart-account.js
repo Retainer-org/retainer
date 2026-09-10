@@ -1,4 +1,4 @@
-import { encodeAbiParameters, encodeFunctionData, concat, getAddress, parseAbi, hashTypedData } from 'viem';
+import { encodeAbiParameters, encodeFunctionData, concat, getAddress, parseAbi, hashTypedData, keccak256 } from 'viem';
 import { SPEND_PERMISSION_EIP712_TYPES } from './permission.js';
 
 /**
@@ -112,8 +112,9 @@ export function registrationSignature(eoa, manager, typedDataSignature) {
  *
  * Solady's signature checker uses plain ecrecover only when the signer has NO
  * code. An EIP-7702-upgraded account has code (0xef0100 ++ delegate), so its
- * signatures are judged by its delegate contract instead, with an outcome we
- * have not verified. Any other code is a contract wallet. Only 'eoa' proceeds.
+ * signatures are judged by its delegate contract instead. Any other code is a
+ * contract wallet. This only classifies; whether an owner is ACCEPTED is decided
+ * by checkOwner below, which admits a plain EOA or a pinned, verified delegate.
  * The chain's answer is used, never a wallet's self-report.
  */
 export function classifyOwnerCode(code) {
@@ -121,6 +122,64 @@ export function classifyOwnerCode(code) {
   const c = code.toLowerCase();
   if (c.startsWith('0xef0100') && c.length === 2 + 46) return { kind: 'eip7702', delegate: getAddress(`0x${c.slice(8)}`) };
   return { kind: 'contract' };
+}
+
+/**
+ * EIP-7702 delegates accepted as the owner of a customer's smart account. ONE address, by decision.
+ *
+ * By default an owner with code is refused: CoinbaseSmartWallet hands the signature check to the
+ * owner's own contract, and an arbitrary contract's idea of a valid signature cannot be vouched for.
+ * This is a deliberate, scoped exception, not a relaxation of that rule:
+ *
+ *   0x63c0c19a282a1B52b07dD5a65b58948A07DAE32B -- MetaMask EIP7702StatelessDeleGator
+ *   (verified source on Basescan, Base Sepolia). Its _isValidSignature is
+ *       if (ECDSA.recover(_hash, _signature) == address(this)) return EIP1271_MAGIC_VALUE;
+ *   i.e. a plain ECDSA signature by the account's own key, with no wrapping of its own -- the same
+ *   security property as a plain EOA, which is what the rest of this flow already relies on.
+ *
+ *   Why it is needed: in a live session MetaMask converted customer accounts to this delegate by
+ *   itself, inside the revoke transaction. Without the exception, a customer who cancelled could
+ *   never register again.
+ *
+ *   Tested 2026-09-10 at block 46652541 (delegation tx 0x930de800f78638f8f2457e5b5b0d182f44fb73807da704d56f83f39a97fdebe2):
+ *   the delegator accepts the owner's typed-data signature, approveWithSignature with ERC-6492
+ *   creation succeeds, and the same message signed by any other key is refused on both paths.
+ *
+ * codeHash pins the exact runtime code that was read and tested. If the code at the address ever
+ * hashes differently, the exception no longer applies and the owner is refused: a trusted address
+ * whose code can silently change is exactly the kind of assumption that rots. Adding an entry here
+ * needs the same review -- source read, behaviour tested with negative controls, hash pinned.
+ */
+export const TRUSTED_7702_DELEGATES = Object.freeze({
+  '0x63c0c19a282a1b52b07dd5a65b58948a07dae32b': Object.freeze({
+    name: 'MetaMask EIP7702StatelessDeleGator',
+    codeHash: '0x83805f9ac7395294043b10c3b7c1839b7e4582a3e693028c36df84978b09d4e2',
+    testedAtBlock: 46652541,
+  }),
+});
+
+/**
+ * Whether an address may own a customer's smart account, decided from the chain.
+ *
+ *   accepted: true   a plain EOA; or a 7702 account delegating to a TRUSTED_7702_DELEGATES entry
+ *                    whose deployed code still hashes to the reviewed version
+ *   accepted: false  reason 'contract_owner' | 'eip7702' (any other delegate) | 'delegate_code_changed'
+ *
+ * `trusted` is a parameter only so the drills can prove the code-hash check refuses; production
+ * callers never pass it.
+ */
+export async function checkOwner(client, owner, { trusted = TRUSTED_7702_DELEGATES, blockNumber } = {}) {
+  const k = classifyOwnerCode(await client.getCode({ address: owner, blockNumber }));
+  if (k.kind === 'eoa') return { ...k, accepted: true };
+  if (k.kind === 'contract') return { ...k, accepted: false, reason: 'contract_owner' };
+  const t = trusted[k.delegate.toLowerCase()];
+  if (!t) return { ...k, accepted: false, reason: 'eip7702' };
+  const code = await client.getCode({ address: k.delegate, blockNumber });
+  const got = code && code !== '0x' ? keccak256(code) : null;
+  if (!got || got.toLowerCase() !== t.codeHash.toLowerCase()) {
+    return { ...k, accepted: false, reason: 'delegate_code_changed', expected: t.codeHash, got };
+  }
+  return { ...k, accepted: true, trustedDelegate: t.name };
 }
 
 /** The manager's EIP-712 domain, read from the chain rather than assumed. */

@@ -6,7 +6,7 @@ import {
 } from "viem";
 import { baseSepolia } from "viem/chains";
 import {
-  classifyOwnerCode, deriveSmartAccount, erc20Abi, localPermissionHash, managerDomain,
+  checkOwner, deriveSmartAccount, erc20Abi, localPermissionHash, managerDomain,
   smartWalletAbi, smartWalletTypedData, spendPermissionManagerAbi, toStruct,
 } from "@retainer/chain";
 
@@ -37,6 +37,7 @@ type Announced = { info: { uuid: string; name: string; icon?: string; rdns: stri
 type Policy = {
   chainId: number; manager: Hex; router: Hex; usdc: Hex; executor: Hex; treasury: Hex; factory: Hex; extraData: Hex;
   allowance: string; periodSeconds: number; periodInDays: number; durationSeconds: number;
+  registrationEnabled?: boolean;
 };
 type Struct = ReturnType<typeof toStruct>;
 type Existing = { id: string; permissionHash: Hex; approveTx: Hex | null; revokedAt: string | null; revokeTx: Hex | null; permission: any };
@@ -117,7 +118,7 @@ export function SignFlow() {
   const [walletName, setWalletName] = useState("");
   const [eoa, setEoa] = useState<Hex | null>(null);
   const [chainOk, setChainOk] = useState<boolean | null>(null);
-  const [owner, setOwner] = useState<ReturnType<typeof classifyOwnerCode> | null>(null);
+  const [owner, setOwner] = useState<Awaited<ReturnType<typeof checkOwner>> | null>(null);
   const [account, setAccount] = useState<Hex | null>(null);
   const [deployed, setDeployed] = useState<boolean | null>(null);
   const [balance, setBalance] = useState<bigint | null>(null);
@@ -178,14 +179,13 @@ export function SignFlow() {
 
       // Owner code from the chain -- not from anything the wallet says about itself. Existing permissions are
       // fetched whatever the owner is: an account that changed after registering must still find and revoke them.
-      const [ownerCode, mine] = await Promise.all([
-        pub.getCode({ address: me }),
+      const [kind, mine] = await Promise.all([
+        checkOwner(pub, me),
         fetch(`/api/permissions?signer=${me}`).then((r) => r.json()).catch(() => ({ permissions: [] })),
       ]);
       setExisting(mine.permissions ?? []);
-      const kind = classifyOwnerCode(ownerCode);
       setOwner(kind);
-      if (kind.kind !== "eoa") return;
+      if (!kind.accepted) return;
 
       const acct = await deriveSmartAccount(pub, me, pol.manager);
       setAccount(acct);
@@ -273,6 +273,20 @@ export function SignFlow() {
     finally { setBusy(null); }
   }
 
+  async function withdraw() {
+    if (!wc || !account || !pol || !eoa || balance === null || balance <= 0n) return;
+    setErr(null); setNeedEth(false); setBusy("Waiting for your wallet…");
+    try {
+      // Only an owner can move money out of the smart account, and the customer's wallet is one.
+      const tx = await wc.writeContract({ address: account, abi: smartWalletAbi, functionName: "execute", account: eoa, chain: baseSepolia,
+        args: [pol.usdc, 0n, encodeFunctionData({ abi: erc20Abi, functionName: "transfer", args: [eoa, balance] })] });
+      setFundTx(tx); setBusy("Waiting for the withdrawal to confirm…");
+      await pub.waitForTransactionReceipt({ hash: tx });
+      setBalance(await pub.readContract({ address: pol.usdc, abi: erc20Abi, functionName: "balanceOf", args: [account] }) as bigint);
+    } catch (e: any) { const m = e?.shortMessage ?? e?.message ?? String(e); setErr(m); setNeedEth(/insufficient funds|gas/i.test(m)); }
+    finally { setBusy(null); }
+  }
+
   async function sign() {
     if (!wc || !account || !struct || !hash || !eoa || !pol) return;
     setErr(null); setBusy("Waiting for your signature…");
@@ -354,7 +368,7 @@ export function SignFlow() {
   /* ---------------------------------------------------------------- gating */
   const hashOk = !!hash && hash.local.toLowerCase() === hash.onchain.toLowerCase();
   const funded = balance !== null && balance >= allowance;
-  const canSign = !!struct && hashOk && owner?.kind === "eoa" && chainOk === true && (funded || ackUnfunded) && !busy && !result;
+  const canSign = pol?.registrationEnabled !== false && !!struct && hashOk && owner?.accepted === true && chainOk === true && (funded || ackUnfunded) && !busy && !result;
 
   if (!pol) return <p className="text-sm text-neutral-500">{err ?? "Loading the terms…"}</p>;
   const otherSessionSigners = eoa ? sessionRegs.filter((r) => r.eoa.toLowerCase() !== eoa.toLowerCase()) : [];
@@ -370,6 +384,12 @@ export function SignFlow() {
 
   return (
     <div className="space-y-5">
+      {pol.registrationEnabled === false && (
+        <p className="rounded-lg bg-amber-500/10 p-3 text-sm leading-6 text-neutral-800 ring-1 ring-amber-500/40 dark:text-neutral-200">
+          <b>Signing is not switched on for this deployment yet.</b> You can read the terms and check your account, but registering a
+          permission needs Retainer&apos;s executor, which this deployment does not run — so the sign button stays off and nothing is submitted.
+        </p>
+      )}
       {/* ------------------------------------------------ 1. the terms, first */}
       <Step n={1} title="What you are agreeing to">
         <p className="text-base leading-7 text-neutral-900 dark:text-white">
@@ -388,7 +408,7 @@ export function SignFlow() {
       </Step>
 
       {/* ------------------------------------------------ 2. wallet + preflight */}
-      <Step n={2} title="Connect a wallet" done={owner?.kind === "eoa" && !!account}>
+      <Step n={2} title="Connect a wallet" done={owner?.accepted === true && !!account}>
         {!eoa && (
           <div className="flex flex-wrap gap-2">
             {wallets.map((w) => (
@@ -416,14 +436,20 @@ export function SignFlow() {
         {eoa && (
           <ul className="space-y-1.5">
             <Check ok={chainOk === true} pending={chainOk === null}>Network is Base Sepolia{switchBtn}</Check>
-            <Check ok={owner?.kind === "eoa"} pending={!owner}>Standard account — read from the chain, not from the wallet</Check>
+            <Check ok={owner?.accepted === true} pending={!owner}>
+              {owner?.kind === "eip7702" && owner.accepted
+                ? <>Upgraded by {walletName} to its verified delegator — accepted: it checks signatures exactly as a standard account does, and its code is checked against the reviewed version</>
+                : "Standard account — read from the chain, not from the wallet"}
+            </Check>
           </ul>
         )}
-        {owner?.kind === "eip7702" && (
+        {owner?.kind === "eip7702" && !owner.accepted && (
           <div className="mt-3 rounded-lg bg-amber-500/10 p-3 text-sm leading-6 text-neutral-800 ring-1 ring-amber-500/40 dark:text-neutral-200">
             <b>{short(eoa)} has been upgraded to a smart account (EIP-7702)</b>, delegating to <span className="font-mono">{short(owner.delegate)}</span>.
-            {" "}{walletName} can do this by itself when an account sends a transaction through it. Signatures from an upgraded account are
-            checked by that contract, which this deployment does not accept yet — so we are not asking you to sign something that would be refused.
+            {" "}{walletName} can do this by itself when an account sends a transaction through it.
+            {"reason" in owner && owner.reason === "delegate_code_changed"
+              ? " That delegator is one this deployment trusts, but the code at its address no longer matches the version that was verified — so it is refused until it has been reviewed again."
+              : " Signatures from an upgraded account are checked by that contract, and it is not one this deployment has verified — so we are not asking you to sign something that would be refused."}
             {activeExisting.length > 0 && " Permissions you already signed keep working, and you can still revoke them below."}
             <div className="mt-2 flex flex-wrap items-center gap-2">
               <span>To continue:</span>{switchAcctBtn}
@@ -440,13 +466,13 @@ export function SignFlow() {
         )}
         {eoa && (
           <div className="mt-3 flex flex-wrap items-center gap-3 text-xs">
-            {owner?.kind === "eoa" && switchAcctBtn}
+            {owner?.accepted === true && switchAcctBtn}
             <button className="text-neutral-500 underline" onClick={reset}>Use a different wallet app</button>
           </div>
         )}
       </Step>
 
-      {account && owner?.kind === "eoa" && (
+      {account && owner?.accepted === true && (
         <>
           {/* ------------------------------------------ 3. funding, explicit */}
           <Step n={3} title="Put USDC in your smart account" done={funded}>
@@ -467,6 +493,12 @@ export function SignFlow() {
                 </span>
               </div>
             </div>
+            {deployed && balance !== null && balance > 0n && (
+              <div className="mt-3 flex flex-wrap items-center gap-3 text-xs text-neutral-600 dark:text-neutral-400">
+                <button className={secondary} disabled={!!busy || chainOk !== true} onClick={withdraw}>Withdraw {usdc(balance)} USDC to {short(eoa)}</button>
+                <span>It is yours: this moves it back to your wallet. Charges then fail until the account is funded again.</span>
+              </div>
+            )}
             {!funded && (
               <div className="mt-3 flex flex-wrap items-center gap-3">
                 <button className={secondary} disabled={!!busy || chainOk !== true} onClick={fundFromWallet}>Send {usdc(allowance)} USDC from {short(eoa)}</button>

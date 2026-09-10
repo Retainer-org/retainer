@@ -4,7 +4,7 @@ import { createWalletClient, http, getAddress, hexToBigInt, isHex, isAddress, si
 import { privateKeyToAccount } from 'viem/accounts';
 import { baseSepolia } from 'viem/chains';
 import { spendPermissionManagerAbi, toStruct, config, publicClient,
-  deriveSmartAccount, smartWalletTypedData, registrationSignature, classifyOwnerCode } from '@retainer/chain';
+  deriveSmartAccount, smartWalletTypedData, registrationSignature, checkOwner } from '@retainer/chain';
 import { query } from '@retainer/db';
 import { storePermission } from '../../../../cli/src/store.js';
 import { policy, publicPolicy, checkPolicy, ipHashFrom } from './policy.js';
@@ -103,13 +103,17 @@ export async function POST(req) {
         { expected: derived, got: permission.account });
     }
 
-    // Owner code, from the chain: a 7702-upgraded or contract owner is refused before anything is signed
-    // on the page, and again here in case it changed in between.
-    const owner = classifyOwnerCode(await pub.getCode({ address: signerEoa }));
-    if (owner.kind === 'eip7702') {
-      return refuse(409, 'eip7702', 'This account has been upgraded to a smart account (EIP-7702). Its signatures are checked by its own contract, and we have not verified that contract accepts this permission. Use a standard account, or the Base Account option.', { delegate: owner.delegate });
-    }
-    if (owner.kind === 'contract') {
+    // The owner, from the chain: a plain EOA, or a 7702 account delegating to a delegate that has been
+    // verified and pinned by code hash (TRUSTED_7702_DELEGATES). Anything else is refused before any gas.
+    // The page checks first; this checks again in case the account changed in between.
+    const owner = await checkOwner(pub, signerEoa);
+    if (!owner.accepted) {
+      if (owner.reason === 'delegate_code_changed') {
+        return refuse(409, 'delegate_code_changed', "This account delegates to MetaMask's delegator, but the code at that address no longer matches the version that was verified. It is refused until it has been reviewed again.", { delegate: owner.delegate, expected: owner.expected, got: owner.got });
+      }
+      if (owner.reason === 'eip7702') {
+        return refuse(409, 'eip7702', 'This account has been upgraded to a smart account (EIP-7702) that delegates to a contract this deployment does not trust to check signatures. Use a standard account, or the Base Account option.', { delegate: owner.delegate });
+      }
       return refuse(409, 'contract_owner', 'This address is a contract, not a standard account. A smart contract wallet cannot own the account this flow creates. Pay by transfer instead.');
     }
 

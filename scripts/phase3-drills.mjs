@@ -21,7 +21,7 @@ import { createWalletClient, http, encodeFunctionData, parseAbi, getAddress, par
 import { privateKeyToAccount, generatePrivateKey } from 'viem/accounts';
 import { baseSepolia } from 'viem/chains';
 import { publicClient, config, toStruct, periodFor, classify, deriveSmartAccount, smartWalletTypedData,
-  smartWalletAbi, classifyOwnerCode, erc20Abi, spendRouterAbi, SMART_WALLET_FACTORY } from '@retainer/chain';
+  smartWalletAbi, classifyOwnerCode, erc20Abi, spendRouterAbi, SMART_WALLET_FACTORY, checkOwner, TRUSTED_7702_DELEGATES } from '@retainer/chain';
 import { query, close } from '@retainer/db';
 import { claimCharge, attemptCharge } from '../apps/worker/src/charger.js';
 import { recoverOpenAttempts } from '../apps/worker/src/recovery.js';
@@ -247,7 +247,7 @@ try {
     args: [X.s, 1_000_000n], account: exec, ...o }).then(() => true).catch((e) => { if (/block|header/i.test(e.message)) throw e; return e.shortMessage; }));
   check('a spend against the existing permission still validates — spends check the stored approval, not the signature', spendsStill === true, String(spendsStill));
   const X3 = await build(A.address);
-  await refused('a 7702-upgraded owner is refused before its signature is even considered',
+  await refused('an owner delegating to any other contract (here the CoinbaseSmartWallet implementation) is refused before its signature is considered',
     { path: 'eoa_owned', signerEoa: A.address, permission: ser(X3.s), permissionHash: X3.hash, signature: await typed(A, X3.account, X3.hash) }, 409, 'eip7702');
 
   console.log('\n=== the customer revokes, from their own key ===');
@@ -272,6 +272,32 @@ try {
     args: [cfg.usdc, 0n, encodeFunctionData({ abi: erc20Abi, functionName: 'transfer', args: [FUND_WALLET, left] })] });
   const wdR = await wait(ev.withdraw);
   check('the owner can still move their own funds out after revoking', (await at(wdR, (o) => usdcOf(X.account, o))) === 0n, `${left} withdrawn`);
+  console.log('\n=== an owner MetaMask has upgraded: its verified delegator is accepted, and only it ===');
+  // A fresh key delegated to MetaMask's EIP7702StatelessDeleGator -- the state MetaMask leaves a customer in
+  // after a revoke. The one delegate TRUSTED_7702_DELEGATES admits, pinned by code hash.
+  const MM = '0x63c0c19a282a1B52b07dD5a65b58948A07DAE32B';
+  const mKey = generatePrivateKey(); const M = privateKeyToAccount(mKey);
+  appendFileSync(KEY_LOG, `${new Date().toISOString()} metamask-delegated ${M.address} ${mKey}\n`, { mode: 0o600 });
+  const mAuth = await M.signAuthorization({ address: MM, contractAddress: MM, chainId: 84532, nonce: 0 });
+  ev.metamaskDelegation = await execW.sendTransaction({ authorizationList: [mAuth], to: exec.address, value: 0n });
+  const mR = await wait(ev.metamaskDelegation);
+  const mk = await at(mR, (o) => checkOwner(pub, M.address, o));
+  check('the owner delegates to MetaMask\'s verified delegator, and checkOwner accepts it', mk.kind === 'eip7702' && mk.accepted === true, `${mk.kind} -> ${mk.delegate}`);
+  const XM = await build(M.address);
+  const goodM = { path: 'eoa_owned', signerEoa: M.address, permission: ser(XM.s), permissionHash: XM.hash, signature: await typed(M, XM.account, XM.hash) };
+  await refused('a different key\'s signature for a MetaMask-delegated account is refused', { ...goodM, signature: await typed(S, XM.account, XM.hash) }, 400, 'not_owner');
+  const nM = await nonceOf();
+  const regM = await post('/api/permissions', goodM);
+  check('a MetaMask-delegated owner can register — one signature, account created', regM.status === 200 && regM.body.accountCreatedByThisTx === true, regM.body.error ?? regM.body.approveTx);
+  ev.registerMetaMask7702 = regM.body.approveTx; made.txs.push(ev.registerMetaMask7702);
+  const rowM = (await query('SELECT id FROM permissions WHERE permission_hash = $1', [XM.hash])).rows[0]; made.permissionIds.push(rowM?.id);
+  check('it cost exactly one executor transaction', (await nonceOf()) === nM + 1);
+  const regMR = await pub.waitForTransactionReceipt({ hash: ev.registerMetaMask7702 });
+  check('the permission is approved on-chain', await at(regMR, (o) => pub.readContract({ address: cfg.manager, abi: mgr, functionName: 'isApproved', args: [XM.s], ...o })));
+  // The pin. The same trusted address with any other code must be refused.
+  const tampered = { [MM.toLowerCase()]: { ...TRUSTED_7702_DELEGATES[MM.toLowerCase()], codeHash: '0x' + '00'.repeat(32) } };
+  const pinned = await at(regMR, (o) => checkOwner(pub, M.address, { ...o, trusted: tampered }));
+  check('control: had the delegator\'s code hashed differently from the reviewed version, the owner would be refused', !pinned.accepted && pinned.reason === 'delegate_code_changed', pinned.reason);
 } catch (e) {
   fail++; console.log(`  [FAIL] drill aborted: ${e.shortMessage ?? e.message}`);
 } finally {
