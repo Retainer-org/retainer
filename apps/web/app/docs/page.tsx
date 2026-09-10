@@ -1,4 +1,5 @@
 import { H1, H2, P, UL, C, Cite, Callout, Pre } from "@/components/docs/prose";
+import { Architecture } from "@/components/docs/architecture";
 
 export default function WhatRetainerIs() {
   return (
@@ -10,6 +11,23 @@ export default function WhatRetainerIs() {
         on a schedule for whatever the period actually cost, routes each charge from the customer to the merchant&apos;s treasury
         in a single atomic transaction, and marks the charge paid only after the on-chain events confirm it.
         <Cite file="apps/worker/src/charger.js" />
+      </P>
+
+      <H2 id="system">The system, and its two fulfilment paths</H2>
+      <P>
+        An <b>expected payment</b> is the top-level object: an amount, a due date, and a state. It is satisfied one of two ways, and
+        both are first-class. <b>Pull</b> draws on a spend permission through Retainer&apos;s router. <b>Watch</b> detects an incoming
+        transfer the payer sent themselves and matches it to the obligation. The second exists because a Safe multisig
+        <i>cannot</i> be the account of a spend permission, so DAO and treasury payers are reachable no other way.
+        <Cite file="packages/db/migrations/003_expected_payments.sql" line={12} />
+      </P>
+
+      <Architecture caption="Both paths end at the merchant treasury, and Retainer holds the money on neither." />
+
+      <P>
+        The consequence worth noticing is that overdue detection has one path, not two: a pull whose charge failed terminally and a
+        watch payment that never arrived both leave the same obligation unsatisfied past its due date, and both raise the same
+        alert. <Cite file="apps/worker/src/sweep.js" line={11} />
       </P>
 
       <H2 id="problem">The problem it solves</H2>
