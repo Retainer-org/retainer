@@ -68,7 +68,7 @@ message      { hash: <the permission's hash, from SpendPermissionManager.getHash
       </P>
       <P>
         So the owner&apos;s code is read from the chain the moment the wallet connects, and a 7702 account is told plainly instead of being
-        asked to sign into a failure. <Cite file="apps/web/components/sign/sign-flow.tsx" line={166} /> The server checks again before
+        asked to sign into a failure. <Cite file="apps/web/components/sign/sign-flow.tsx" line={171} /> The server checks again before
         doing anything that costs gas. <Cite file="apps/web/app/api/permissions/route.js" line={109} /> This is the specific thing the
         hosted flow gets wrong: its capability check reports the chain as supported, and the popup then refuses. Here the answer comes
         from the chain, not from the wallet&apos;s description of itself. <Cite file="packages/chain/src/smart-account.js" line={119} />
@@ -88,8 +88,8 @@ message      { hash: <the permission's hash, from SpendPermissionManager.getHash
       <UL>
         <li>The terms come first, before any wallet is connected: token, exact cap, period, start, expiry, who collects, where it goes, and how to stop it.</li>
         <li>Every figure is rendered from the exact struct that gets hashed and signed.</li>
-        <li>The sign button stays disabled until the hash computed on the page equals the manager&apos;s own <C>getHash</C>, read from the chain. <Cite file="apps/web/components/sign/sign-flow.tsx" line={296} /> <Cite file="apps/web/components/sign/sign-flow.tsx" line={298} /></li>
-        <li>That same hash is shown as the fingerprint the wallet will display, with an instruction not to sign if it differs — which turns a blind signature into one the customer can check. <Cite file="apps/web/components/sign/sign-flow.tsx" line={401} /></li>
+        <li>The sign button stays disabled until the hash computed on the page equals the manager&apos;s own <C>getHash</C>, read from the chain. <Cite file="apps/web/components/sign/sign-flow.tsx" line={312} /> <Cite file="apps/web/components/sign/sign-flow.tsx" line={314} /></li>
+        <li>That same hash is shown as the fingerprint the wallet will display, with an instruction not to sign if it differs — which turns a blind signature into one the customer can check. <Cite file="apps/web/components/sign/sign-flow.tsx" line={420} /></li>
         <li>The server recomputes the hash itself and refuses a mismatch, so a page that showed one thing and submitted another is caught. <Cite file="apps/web/app/api/permissions/route.js" line={85} /></li>
       </UL>
 
@@ -98,7 +98,7 @@ message      { hash: <the permission's hash, from SpendPermissionManager.getHash
         Charges draw from the smart account, not from the customer&apos;s wallet address, and it starts empty. A customer has to move USDC
         into an address they had never seen a minute earlier. The sign page makes this its own step, with the live balance, a one-click
         transfer from the connected wallet, and an explicit acknowledgement if they choose to sign first.
-        <Cite file="apps/web/components/sign/sign-flow.tsx" line={362} />
+        <Cite file="apps/web/components/sign/sign-flow.tsx" line={381} />
       </P>
       <Callout kind="warn" title="Not yet built: funding with a signature alone">
         USDC supports EIP-3009: the customer signs one more typed-data message authorising a transfer from their wallet to their smart
@@ -133,7 +133,7 @@ message      { hash: <the permission's hash, from SpendPermissionManager.getHash
       <P>
         The manager accepts <C>revoke</C> only from the account itself. <Cite file="contracts/src/SpendPermissionManager.sol" line={397} /> The
         account accepts <C>execute</C> from its owner, so the customer&apos;s wallet sends one transaction:
-        <C>account.execute(manager, revoke(permission))</C>. <Cite file="apps/web/components/sign/sign-flow.tsx" line={257} /> It costs a
+        <C>account.execute(manager, revoke(permission))</C>. <Cite file="apps/web/components/sign/sign-flow.tsx" line={273} /> It costs a
         little testnet ETH — the one step on this path the customer pays for. The drill sends exactly that from the customer&apos;s own key and
         confirms the permission is revoked on-chain. <Cite file="scripts/phase3-drills.mjs" line={258} />
       </P>
@@ -152,7 +152,7 @@ message      { hash: <the permission's hash, from SpendPermissionManager.getHash
 
       <H2 id="unproven">Not yet proven</H2>
       <UL>
-        <li><b>The real MetaMask client.</b> Everything above is proven through the endpoint with a key that signs exactly what the page asks for. What MetaMask itself displays, and whether it warns about or refuses this typed data, is answered only by a live session.</li>
+        <li><b>What MetaMask displays around the signature.</b> Signing with the real MetaMask client is proven: permission #18 was registered from a MetaMask account <Cite tx="0xa647cbb0f762f9ea7d4fe7eaef576021f4564840f5d4c0b9cd27e6dc142bf34b" />, and the fingerprint on the page matched the hash MetaMask showed. What else MetaMask displayed — including any security warning — is being recorded from that session and is not written up here yet.</li>
         <li><b>A stranger, on the public site.</b> Registration needs the executor key, which is deliberately not deployed, and there is no hosted worker to run charges. Both are one pending, deliberate step.</li>
         <li><b>Mainnet.</b> The one-signature path depends on Solady&apos;s ERC-6492 verifier being deployed on the chain. It is on Base Sepolia; mainnet has not been checked.</li>
       </UL>

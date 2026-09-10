@@ -44,6 +44,18 @@ type Existing = { id: string; permissionHash: Hex; approveTx: Hex | null; revoke
 const CHAIN_HEX = "0x14a34"; // 84532
 const pub = createPublicClient({ chain: baseSepolia, transport: http() });
 
+/** Ask the wallet for Base Sepolia, adding the network if it does not know it. Returns whether it is now on it. */
+async function switchNetwork(p: Eip1193): Promise<boolean> {
+  try { await p.request({ method: "wallet_switchEthereumChain", params: [{ chainId: CHAIN_HEX }] }); }
+  catch (e: any) {
+    if (e?.code !== 4902 && e?.data?.originalError?.code !== 4902) throw e;
+    await p.request({ method: "wallet_addEthereumChain", params: [{
+      chainId: CHAIN_HEX, chainName: "Base Sepolia", nativeCurrency: { name: "Ether", symbol: "ETH", decimals: 18 },
+      rpcUrls: ["https://sepolia.base.org"], blockExplorerUrls: ["https://sepolia.basescan.org"] }] });
+  }
+  return (await p.request({ method: "eth_chainId" })) === CHAIN_HEX;
+}
+
 /* ------------------------------------------------------------------ formatting */
 const usdc = (v: bigint | string, dp = 2) => (Number(BigInt(v)) / 1e6).toFixed(dp);
 const short = (a?: string | null) => (a ? `${a.slice(0, 6)}…${a.slice(-4)}` : "");
@@ -148,18 +160,11 @@ export function SignFlow() {
       const me = getAddress(addr);
       setEoa(me);
 
-      // Network first: everything after this reads Base Sepolia.
+      // Ask the wallet to switch, but do not stop if it will not: everything below reads Base Sepolia
+      // through our own client, not the wallet's. Only signing and sending need the wallet on the right
+      // network, and those stay gated on this check -- with a button beside it to fix it.
       const cid = await w.provider.request({ method: "eth_chainId" });
-      if (cid !== CHAIN_HEX) {
-        try { await w.provider.request({ method: "wallet_switchEthereumChain", params: [{ chainId: CHAIN_HEX }] }); }
-        catch (e: any) {
-          if (e?.code !== 4902) throw e;
-          await w.provider.request({ method: "wallet_addEthereumChain", params: [{
-            chainId: CHAIN_HEX, chainName: "Base Sepolia", nativeCurrency: { name: "Ether", symbol: "ETH", decimals: 18 },
-            rpcUrls: ["https://sepolia.base.org"], blockExplorerUrls: ["https://sepolia.basescan.org"] }] });
-        }
-      }
-      setChainOk((await w.provider.request({ method: "eth_chainId" })) === CHAIN_HEX);
+      setChainOk(cid === CHAIN_HEX ? true : await switchNetwork(w.provider).catch(() => false));
 
       // Owner code from the chain -- not from anything the wallet says about itself.
       setBusy("Checking your account…");
@@ -203,12 +208,23 @@ export function SignFlow() {
 
   useEffect(() => {
     if (!provider?.on) return;
-    const onChange = () => reset();
-    provider.on("accountsChanged", onChange); provider.on("chainChanged", onChange);
-    return () => { provider.removeListener?.("accountsChanged", onChange); provider.removeListener?.("chainChanged", onChange); };
+    // A different account is a different customer: start over. A different network is not --
+    // everything already shown still stands, so only the network check is re-evaluated.
+    const onAccounts = () => reset();
+    const onChain = (id: string) => setChainOk(id === CHAIN_HEX);
+    provider.on("accountsChanged", onAccounts); provider.on("chainChanged", onChain);
+    return () => { provider.removeListener?.("accountsChanged", onAccounts); provider.removeListener?.("chainChanged", onChain); };
   }, [provider]);
 
   /* ---------------------------------------------------------------- actions */
+  async function doSwitch() {
+    if (!provider) return;
+    setErr(null); setBusy("Waiting for your wallet to switch network…");
+    try { setChainOk(await switchNetwork(provider)); }
+    catch (e: any) { setErr(`Your wallet did not switch (${e?.shortMessage ?? e?.message ?? e}). Choose Base Sepolia in the wallet, then come back — this page will notice.`); }
+    finally { setBusy(null); }
+  }
+
   async function fundFromWallet() {
     if (!wc || !account || !pol || !eoa) return;
     setErr(null); setBusy("Waiting for your wallet…");
@@ -298,6 +314,9 @@ export function SignFlow() {
   const canSign = !!struct && hashOk && owner?.kind === "eoa" && chainOk === true && (funded || ackUnfunded) && !busy && !result;
 
   if (!pol) return <p className="text-sm text-neutral-500">{err ?? "Loading the terms…"}</p>;
+  const switchBtn = chainOk === false && (
+    <button className={`${secondary} ml-3 !px-2.5 !py-1 text-xs`} disabled={!!busy} onClick={doSwitch}>Switch to Base Sepolia</button>
+  );
   const periodW = periodWords(pol.periodSeconds);
   const days = pol.durationSeconds / 86400;
 
@@ -336,7 +355,7 @@ export function SignFlow() {
         {eoa && (
           <ul className="space-y-1.5">
             <Check ok>Connected {walletName}: <span className="font-mono">{eoa}</span></Check>
-            <Check ok={chainOk === true} pending={chainOk === null}>Network is Base Sepolia</Check>
+            <Check ok={chainOk === true} pending={chainOk === null}>Network is Base Sepolia{switchBtn}</Check>
             <Check ok={owner?.kind === "eoa"} pending={!owner}>Standard account — read from the chain, not from the wallet</Check>
           </ul>
         )}
@@ -379,7 +398,7 @@ export function SignFlow() {
             </div>
             {!funded && (
               <div className="mt-3 flex flex-wrap items-center gap-3">
-                <button className={secondary} disabled={!!busy} onClick={fundFromWallet}>Send {usdc(allowance)} USDC from {short(eoa)}</button>
+                <button className={secondary} disabled={!!busy || chainOk !== true} onClick={fundFromWallet}>Send {usdc(allowance)} USDC from {short(eoa)}</button>
                 <span className="text-xs text-neutral-500 dark:text-neutral-400">
                   needs a little testnet ETH for gas · or get test USDC from <Link2 href="https://faucet.circle.com">Circle&apos;s faucet</Link2> sent straight to the address above
                 </span>
@@ -404,10 +423,16 @@ export function SignFlow() {
             <ul className="mt-3 space-y-1.5">
               <Check ok={hashOk} pending={!hash}>The fingerprint computed on this page equals the permission manager&apos;s own hash, read from the chain</Check>
               <Check ok={funded || ackUnfunded}>{funded ? "Your smart account is funded" : "You have acknowledged the account is not funded yet"}</Check>
-              <Check ok={chainOk === true}>Your wallet is on Base Sepolia</Check>
+              <Check ok={chainOk === true}>Your wallet is on Base Sepolia{switchBtn}</Check>
             </ul>
-            <button className={`${primary} mt-4`} disabled={!canSign} onClick={sign}>Sign with {walletName}</button>
-            <p className="mt-2 text-xs text-neutral-500 dark:text-neutral-400">Signing costs you nothing. Retainer submits the registration and pays its gas.</p>
+            {result ? (
+              <p className="mt-4 text-sm font-medium text-emerald-700 dark:text-emerald-400">Signed and registered — details below.</p>
+            ) : (
+              <>
+                <button className={`${primary} mt-4`} disabled={!canSign} onClick={sign}>Sign with {walletName}</button>
+                <p className="mt-2 text-xs text-neutral-500 dark:text-neutral-400">Signing costs you nothing. Retainer submits the registration and pays its gas.</p>
+              </>
+            )}
           </Step>
         </>
       )}
@@ -440,7 +465,7 @@ export function SignFlow() {
                   </div>
                   {r
                     ? <span className="text-xs text-neutral-500">revoked · <Link2 href={scan("tx", r)}>{short(r)}</Link2></span>
-                    : <button className={secondary} disabled={!!busy} onClick={() => revoke(p)}>Revoke</button>}
+                    : <button className={secondary} disabled={!!busy || chainOk !== true} title={chainOk !== true ? "Switch your wallet to Base Sepolia first" : undefined} onClick={() => revoke(p)}>Revoke</button>}
                 </li>
               );
             })}

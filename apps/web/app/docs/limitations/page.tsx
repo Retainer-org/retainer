@@ -8,7 +8,7 @@ export default function Limitations() {
 
       <Table head={["Limitation", "Detail", "Status"]} rows={[
         ["Base Sepolia only", "Chain 84532. Every address and transaction in these docs is testnet. There is no mainnet deployment, no production claim, and the test keys are disposable.", "By decision"],
-        ["Hosted consent blocked upstream", <>A newly created Base Account cannot sign a spend permission on Base Sepolia: Coinbase&apos;s hosted screen refuses with &ldquo;This chain is not supported.&rdquo; See below. Wallet-owned smart accounts (MetaMask and others) never reach that screen — see <Link href="/docs/wallets" className="text-brand-primary hover:underline">signing with any wallet</Link>.</>, <Link href="https://github.com/base/account-sdk/issues/363" target="_blank" rel="noopener noreferrer" className="text-brand-primary hover:underline">base/account-sdk#363</Link>],
+        ["Base Account consent blocked upstream", <>A newly created Base Account cannot sign a spend permission on Base Sepolia: Coinbase&apos;s hosted screen refuses with &ldquo;This chain is not supported.&rdquo; See below. <b>It no longer blocks testnet.</b> A browser wallet signs through a smart account it owns, which never reaches that screen — proven with MetaMask, permission #18 <Cite tx="0xa647cbb0f762f9ea7d4fe7eaef576021f4564840f5d4c0b9cd27e6dc142bf34b" />. See <Link href="/docs/wallets" className="text-brand-primary hover:underline">signing with any wallet</Link>.</>, <Link href="https://github.com/base/account-sdk/issues/363" target="_blank" rel="noopener noreferrer" className="text-brand-primary hover:underline">base/account-sdk#363</Link>],
         ["No fee mechanism in the router", "The router forwards the full value to one recipient. Retainer cannot take a percentage without becoming custodial. Revenue must be a flat merchant fee, outside the flow.", "Structural"],
         ["No auth on the dashboard", <>/dashboard is public and has <b>no authentication of any kind</b>. Five review actions can now write &mdash; applying a transfer to an obligation, marking one not-a-payment, and linking a sender to a customer &mdash; so anyone who can reach the URL can alter matching records. No money can move: the actions only attribute transfers that already happened, and cannot charge, revoke or transfer. Acceptable only because this is testnet data whose addresses are already public. Not acceptable for a real merchant, and auth must land before any deployment that is not this one.</>, "Not built"],
         ["No hosted worker", "A customer can sign and register from the sign page, but charges only run where the worker runs, and the public deployment has neither the executor key nor a worker. Deploying both is one deliberate, pending step — offering half the flow publicly would look broken rather than absent.", "Not built"],
@@ -25,6 +25,10 @@ export default function Limitations() {
       ]} />
 
       <H2 id="363">The hosted-consent block, precisely</H2>
+      <P>
+        This affects the Base Account path only. On testnet the working route is a browser wallet owning a smart account — see{" "}
+        <Link href="/docs/wallets" className="text-brand-primary hover:underline">signing with any wallet</Link>.
+      </P>
       <P>
         Coinbase&apos;s <C>keys.coinbase.com</C> signing screen rejects Base Sepolia for newly created Base Accounts with the message
         <i>&ldquo;This chain is not supported. Base Sepolia is not supported. Please try a different chain.&rdquo;</i> The message is misleading:

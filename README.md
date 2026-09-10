@@ -38,12 +38,14 @@ A structural consequence: `SpendRouter.extraData` encodes exactly one recipient
 and forwards the full value, so there is no fee split. Retainer's revenue is a
 flat SaaS fee to merchants, never a percentage of flow.
 
-## Phase 1 status — closed 2026-09-09
+## Phase 1 status — closed 2026-09-09; consent step closed 2026-09-10
 
-Everything in the Phase 1 definition of done is proven on Base Sepolia **except
-the real-account browser consent step, which is blocked upstream by a Coinbase
-bug**. That gap is not in this repository and there is no change we can make
-here that closes it.
+Everything in the Phase 1 definition of done is proven on Base Sepolia. The one
+step that stayed open — a real wallet consenting in a browser — was blocked for
+Base Accounts by a Coinbase bug. It is now proven by a different route: a
+MetaMask account owning a smart account, signing through the sign page. See
+[A browser wallet can sign on testnet](#a-browser-wallet-can-sign-on-testnet).
+The Coinbase constraint itself is unchanged, and stays documented below.
 
 ### Proven
 
@@ -91,7 +93,24 @@ final charge, nonce 25             0xe0ac2a1eed2bb2a5ea4c0a6ee418d4edb37c2320f48
 Sum of the six settled amounts is 7,050,000 (7.05 USDC); the merchant treasury
 held exactly 7,050,000 and the router 0 when checked on 2026-09-09.
 
-### Not proven — blocked upstream
+### A browser wallet can sign on testnet
+
+On 2026-09-10 a MetaMask account signed a spend permission on Base Sepolia
+through `/sign`, end to end — no Base Account, and no Coinbase consent screen.
+**This is the working route on testnet.**
+
+| Step | Evidence |
+|---|---|
+| One signature: smart account created, manager an owner, permission #18 approved — one executor transaction | [`0xa647cbb0…bf34b`](https://sepolia.basescan.org/tx/0xa647cbb0f762f9ea7d4fe7eaef576021f4564840f5d4c0b9cd27e6dc142bf34b) |
+| The fingerprint on the page matched the hash MetaMask displayed | observed by the operator during the session |
+| The customer funded their smart account, 20 USDC | [`0xd7b54e9e…8a4d6`](https://sepolia.basescan.org/tx/0xd7b54e9e251f1da863731753678c4c368af928e5e3ff1354ae24391600c8a4d6) |
+| First charge: 1.000000 USDC to the treasury, confirmed by the reconciler | [`0x36b5468c…8dfba`](https://sepolia.basescan.org/tx/0x36b5468cc65fb1a307ff75d5039f6a01d1b40760e1c53264635c7818a3e8dfba) |
+
+The mechanism — an EOA-owned `CoinbaseSmartWallet`, a typed-data signature, and
+ERC-6492 deployment inside `approveWithSignature` — is described at `/docs/wallets`
+and exercised with every negative control by `npm run drill:metamask`.
+
+### Base Account consent — still blocked upstream
 
 **A real Base Account cannot consent to a spend permission on Base Sepolia.**
 Coinbase's hosted signing UI at `keys.coinbase.com` rejects the request with:
