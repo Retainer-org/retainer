@@ -256,6 +256,8 @@ live RPC as its own negative control.
 npm run drill:matching   # all six matching cases, against real transfers
 npm run drill:alerts     # overdue detection, webhook signing and retry, email transport
 npm run drill:dashboard  # the five review actions, over real HTTP
+npm run drill:metamask   # a wallet-owned smart account end to end: controls, register, charge, 7702, revoke
+npm run session:report -- --signer 0x...   # every hash for one customer's session, from the chain and our records
 npm run prune:drills     # report leftover drill rows (add -- --apply to remove)
 ```
 

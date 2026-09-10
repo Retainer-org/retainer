@@ -10,6 +10,7 @@ import { deliverAlerts, addDestination } from '../../worker/src/alerts.js';
 import { recentEvents } from '../../worker/src/events.js';
 import { checkGasTank } from '../../worker/src/gastank.js';
 import { indexEvents, confirmCharges } from '../../worker/src/reconciler.js';
+import { enqueuePullCharge } from '../../worker/src/enqueue.js';
 
 const [cmd, ...rest] = process.argv.slice(2);
 const arg = (k, d) => { const i = rest.indexOf(`--${k}`); return i >= 0 ? rest[i + 1] : d; };
@@ -18,37 +19,13 @@ const out = (o) => console.log(JSON.stringify(o, (k, v) => (typeof v === 'bigint
 async function main() {
   switch (cmd) {
     case 'enqueue': {
-      // Create the charge row for the CURRENT billing period. period_start is
-      // derived from the permission, never chosen -- that is what makes the
-      // UNIQUE (permission_id, period_start) key a real idempotency guarantee.
-      const permId = arg('permission');
-      const { rows } = await query('SELECT * FROM permissions WHERE id::text = $1 OR permission_hash = $1', [permId]);
-      if (!rows.length) throw new Error('permission not found');
-      const p = rows[0];
-      const now = Math.floor(Date.now() / 1000);
-      const per = periodFor({ start: p.start_ts, end: p.end_ts, period: p.period_seconds }, now);
-      if (per.state !== 'ACTIVE') {
-        // Still enqueue: the classifier is what should report NOT_STARTED/EXPIRED,
-        // so the drill exercises the real path rather than short-circuiting here.
-        const anchor = per.state === 'NOT_STARTED' ? BigInt(p.start_ts) : BigInt(p.end_ts) - BigInt(p.period_seconds);
-        per.periodStart = anchor; per.periodEnd = anchor + BigInt(p.period_seconds);
-      }
-      const source = rest.includes('--usage') ? 'usage' : 'fixed';
-      const amount = source === 'usage' ? '0' : arg('amount');
-      if (source === 'fixed' && !amount) throw new Error('--amount required for a fixed charge');
-      const ins = await query(
-        `INSERT INTO charges (permission_id, period_start, period_end, amount, amount_source)
-         VALUES ($1,$2,$3,$4,$5)
-         ON CONFLICT (permission_id, period_start) DO NOTHING
-         RETURNING id, state`,
-        [p.id, per.periodStart.toString(), per.periodEnd.toString(), amount, source]);
-      if (!ins.rows.length) {
-        const ex = await query('SELECT id, state FROM charges WHERE permission_id=$1 AND period_start=$2',
-          [p.id, per.periodStart.toString()]);
-        out({ created: false, reason: 'idempotency key already exists for this period', charge: ex.rows[0] });
-      } else {
-        out({ created: true, charge: ins.rows[0], periodStart: per.periodStart, amountSource: source });
-      }
+      // Create the charge for the CURRENT billing period, with the expected payment it
+      // fulfils. Shared with the drills so there is exactly one way a pull charge is made.
+      out(await enqueuePullCharge({
+        permission: arg('permission'),
+        source: rest.includes('--usage') ? 'usage' : 'fixed',
+        amount: arg('amount'),
+      }));
       break;
     }
     case 'record-usage': {

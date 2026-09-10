@@ -12,8 +12,9 @@ export async function storePermission(p) {
   const { rows } = await query(
     `INSERT INTO permissions
       (permission_hash, account, spender, token, allowance, period_seconds, start_ts, end_ts,
-       salt, extra_data, executor, recipient, chain_id, signature, approved_tx_hash, approved_at)
-     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16)
+       salt, extra_data, executor, recipient, chain_id, signature, approved_tx_hash, approved_at,
+       signing_path, signer_eoa, registration_ip_hash)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19)
      ON CONFLICT (permission_hash) DO UPDATE SET
        approved_tx_hash = COALESCE(permissions.approved_tx_hash, EXCLUDED.approved_tx_hash),
        approved_at      = COALESCE(permissions.approved_at, EXCLUDED.approved_at)
@@ -21,7 +22,10 @@ export async function storePermission(p) {
     [p.permissionHash, getAddress(p.account), getAddress(p.spender), getAddress(p.token),
      p.allowance.toString(), p.period, p.start, p.end, p.salt.toString(), p.extraData,
      getAddress(executor), getAddress(recipient), config().chainId, p.signature,
-     p.approvedTxHash ?? null, p.approvedTxHash ? new Date() : null]);
+     p.approvedTxHash ?? null, p.approvedTxHash ? new Date() : null,
+     // How it was signed (migration 004). Callers that predate it leave these
+     // NULL rather than guessing, so the column never claims something unverified.
+     p.signingPath ?? null, p.signerEoa ? getAddress(p.signerEoa) : null, p.ipHash ?? null]);
 
   const id = rows[0].id;
   await tx(async (c) => audit(c, {
@@ -30,6 +34,7 @@ export async function storePermission(p) {
       permissionHash: p.permissionHash, account: p.account, spender: p.spender, token: p.token,
       allowance: p.allowance.toString(), periodSeconds: p.period, start: p.start, end: p.end,
       salt: p.salt.toString(), extraData: p.extraData, signature: p.signature,
+      signingPath: p.signingPath ?? null, signerEoa: p.signerEoa ?? null,
     },
   }));
   return id;

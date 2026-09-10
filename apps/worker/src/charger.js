@@ -135,6 +135,12 @@ export async function attemptCharge(row, { crashAfterBroadcast = false, crashBef
     await tx(async (c) => {
       await c.query('UPDATE charges SET amount=$2, usage_note=$3, updated_at=now() WHERE id=$1',
         [row.id, amount.toString(), note]);
+      // The obligation was created owing the usage recorded at enqueue time; correct it to
+      // the figure actually being charged, while nothing has been settled against it.
+      await c.query(
+        `UPDATE expected_payments SET amount_expected = $2, updated_at = now()
+          WHERE id = (SELECT expected_payment_id FROM charges WHERE id = $1) AND amount_settled = 0`,
+        [row.id, amount.toString()]);
       await audit(c, { actor: 'executor', event: 'charge.amount.computed',
         permissionId: row.permission_id, chargeId: row.id, detail: { amount: amount.toString(), note } });
     });

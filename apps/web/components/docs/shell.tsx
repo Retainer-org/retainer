@@ -10,6 +10,7 @@ import { ModeToggle } from "@/components/mode-toggle";
 export const topics = [
   { href: "/docs", label: "What Retainer is" },
   { href: "/docs/spend-permissions", label: "Spend permissions" },
+  { href: "/docs/wallets", label: "Signing with any wallet" },
   { href: "/docs/charge-lifecycle", label: "The charge lifecycle" },
   { href: "/docs/failure-modes", label: "The six failure modes" },
   { href: "/docs/exactly-once", label: "Exactly-once charging" },

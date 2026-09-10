@@ -34,6 +34,9 @@ export type PermissionRow = {
   spentThisPeriod: string | null; remainingThisPeriod: string | null;
   lastActivity: string;            // ISO; drives default ordering
   chargeCount: number;
+  /** How it was signed (migration 004). null = recorded before that existed, not a guess. */
+  signingPath: "base_account" | "eoa_owned" | null;
+  signerEoa: string | null;
 };
 
 export type ChargeRow = {
@@ -142,6 +145,7 @@ export async function loadSnapshot(): Promise<Snapshot> {
     // leftovers with no charges sink to the bottom but stay reachable.
     rows(`SELECT p.id, p.permission_hash, p.account, p.recipient, p.allowance, p.period_seconds, p.start_ts, p.end_ts,
                  p.salt, p.extra_data, p.spender, p.token, p.approved_tx_hash, p.revoked_at,
+                 p.signing_path::text AS signing_path, p.signer_eoa,
                  COALESCE(c.last_update, p.revoked_at, p.approved_at, p.signed_at) AS last_activity,
                  COALESCE(c.n, 0)::int AS charge_count
             FROM permissions p
@@ -204,6 +208,7 @@ export async function loadSnapshot(): Promise<Snapshot> {
       spentThisPeriod: spent === null ? null : spent.toString(),
       remainingThisPeriod: spent === null ? null : (allowance - spent).toString(),
       lastActivity: iso(r.last_activity) ?? "", chargeCount: Number(r.charge_count),
+      signingPath: r.signing_path ?? null, signerEoa: r.signer_eoa ?? null,
     };
   });
 

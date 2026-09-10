@@ -16,7 +16,8 @@ export default async function Permissions() {
           columns={[
             { key: "id", label: "#" }, { key: "hash", label: "Permission" }, { key: "state", label: "On-chain state" },
             { key: "allow", label: "Allowance / period" }, { key: "spend", label: "Spent · remaining" },
-            { key: "parties", label: "Account → recipient" }, { key: "window", label: "Window (UTC)" }, { key: "activity", label: "Last activity" },
+            { key: "parties", label: "Account → recipient" }, { key: "via", label: "Signed via" },
+            { key: "window", label: "Window (UTC)" }, { key: "activity", label: "Last activity" },
           ]}
           rows={permissions.map((p) => ({
             key: p.id, muted: p.onchain !== "active",
@@ -32,6 +33,11 @@ export default async function Permissions() {
                 ? <>{usdc(p.spentThisPeriod)} · <b>{usdc(p.remainingThisPeriod)}</b></>
                 : <span className="text-neutral-400">—</span>,
               parties: <div className="flex flex-col gap-0.5"><Hash value={p.account} kind="address" /><span className="text-neutral-400">→ <Hash value={p.recipient} kind="address" /></span></div>,
+              via: p.signingPath === "eoa_owned"
+                ? <div className="flex flex-col gap-0.5 font-sans text-[11px]"><span>EOA-owned account</span><span className="text-neutral-400">owner <Hash value={p.signerEoa ?? ""} kind="address" /></span></div>
+                : p.signingPath === "base_account"
+                  ? <span className="font-sans text-[11px]">Base Account</span>
+                  : <span className="font-sans text-[11px] text-neutral-400" title="Registered before migration 004 recorded the signing path. Left blank rather than guessed.">not recorded</span>,
               window: <div className="font-sans text-[11px] leading-5 text-neutral-600 dark:text-neutral-400">{fmtUnix(p.start)}<br />{fmtUnix(p.end)}</div>,
               activity: <span className="font-sans text-[11px] text-neutral-600 dark:text-neutral-400">{fmt(p.lastActivity)}<br />{p.chargeCount} charge{p.chargeCount === 1 ? "" : "s"}</span>,
             },

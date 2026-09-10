@@ -49,7 +49,7 @@ export function Architecture({ caption }: { caption?: ReactNode }) {
           aria-labelledby="arch-title arch-desc">
           <title id="arch-title">Retainer system architecture</title>
           <desc id="arch-desc">
-            An expected payment is satisfied by one of two paths. In the pull path, a customer&apos;s Base Account signs a spend
+            An expected payment is satisfied by one of two paths. In the pull path, a customer&apos;s Base Account, or a smart account their wallet owns, signs a spend
             permission once. Retainer&apos;s worker calls Retainer&apos;s SpendRouter, the router calls the SpendPermissionManager, and
             the manager moves USDC from the customer&apos;s wallet to the router, which forwards the full value to the merchant
             treasury in the same transaction. A confirmed charge settles the obligation. In the watch path, any payer, including a
@@ -76,7 +76,7 @@ export function Architecture({ caption }: { caption?: ReactNode }) {
           {/* ---------------------------------------------------- lane 1: pull */}
           <text x="14" y="24" className={`${LANE} text-[11px] font-semibold tracking-wide`}>PULL — SPEND PERMISSION</text>
           <Node x={360} y={34} w={200} h={56} title="SpendPermissionManager" sub="executes on the customer's wallet" />
-          <Node x={14}  y={120} title="Customer" sub="Base Account (ERC-4337)" />
+          <Node x={14}  y={120} title="Customer" sub="Base Account, or wallet-owned" />
           <Node x={360} y={120} w={200} title="SpendRouter" sub="Retainer's own instance" accent />
 
           {/* authorisation, not money: signed once, enforced by the manager */}

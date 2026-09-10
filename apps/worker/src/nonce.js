@@ -18,18 +18,21 @@ export async function allocateNonce(c, executor) {
     [executor.toLowerCase()],
   );
 
-  let next;
-  if (rows.length === 0) {
-    // First run: seed from chain.
-    const chainNonce = await publicClient().getTransactionCount({ address: executor, blockTag: 'pending' });
-    next = BigInt(chainNonce);
-    await c.query('INSERT INTO executor_nonces (executor, next_nonce) VALUES ($1,$2)',
-      [executor.toLowerCase(), (next + 1n).toString()]);
-  } else {
-    next = BigInt(rows[0].next_nonce);
-    await c.query('UPDATE executor_nonces SET next_nonce = $2, updated_at = now() WHERE executor = $1',
-      [executor.toLowerCase(), (next + 1n).toString()]);
-  }
+  // The charger is not the executor's only sender: the server submits permission
+  // registrations from it, taking their nonce from the chain. syncNonce runs at the
+  // start of each tick, but a registration landing later in the same tick would leave
+  // this counter behind -- and the charge would reuse a nonce already spent, never
+  // land, and wait for recovery. So take the max with the chain's pending count at
+  // the moment of allocation, under the same lock. Monotonic: never below the stored
+  // counter, which may legitimately be ahead of the chain (signed, not yet broadcast).
+  const chain = BigInt(await publicClient().getTransactionCount({ address: executor, blockTag: 'pending' }));
+  const stored = rows.length ? BigInt(rows[0].next_nonce) : 0n;
+  const next = chain > stored ? chain : stored;
+
+  await c.query(
+    `INSERT INTO executor_nonces (executor, next_nonce) VALUES ($1, $2)
+     ON CONFLICT (executor) DO UPDATE SET next_nonce = $2, updated_at = now()`,
+    [executor.toLowerCase(), (next + 1n).toString()]);
   return Number(next);
 }
 

@@ -25,6 +25,16 @@ export const spendPermissionManagerAbi = [
       { name: 'end', type: 'uint48' }, { name: 'salt', type: 'uint256' },
       { name: 'extraData', type: 'bytes' }]}],
     outputs: [{ type: 'bool' }] },
+  // The account's own revocation: requireSender(spendPermission.account), so the customer's
+  // smart account calls it via execute(). Used by the sign page's Revoke button.
+  { type: 'function', name: 'revoke', stateMutability: 'nonpayable',
+    inputs: [{ name: 'spendPermission', type: 'tuple', components: [
+      { name: 'account', type: 'address' }, { name: 'spender', type: 'address' },
+      { name: 'token', type: 'address' }, { name: 'allowance', type: 'uint160' },
+      { name: 'period', type: 'uint48' }, { name: 'start', type: 'uint48' },
+      { name: 'end', type: 'uint48' }, { name: 'salt', type: 'uint256' },
+      { name: 'extraData', type: 'bytes' }]}],
+    outputs: [] },
   { type: 'function', name: 'isApproved', stateMutability: 'view',
     inputs: [{ name: 'spendPermission', type: 'tuple', components: [
       { name: 'account', type: 'address' }, { name: 'spender', type: 'address' },
