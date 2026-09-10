@@ -20,6 +20,7 @@
     "check:txs": "node --env-file=.env scripts/check-cited-transactions.mjs",
     "check:sources": "node scripts/check-dashboard-sources.mjs",
     "check:degradation": "cd apps/web && BASE_SEPOLIA_RPC_URL=http://127.0.0.1:9 npx tsx --conditions=react-server --env-file=../../.env ../../scripts/check-rpc-degradation.mts && npx tsx --conditions=react-server --env-file=../../.env ../../scripts/check-rpc-degradation.mts",
+    "check:sign-ui": "node --env-file=.env scripts/check-sign-ui.mjs",
     "drill:matching": "node --env-file=.env scripts/phase2-drills.mjs",
     "drill:alerts": "node --env-file=.env scripts/phase2-alerts-drills.mjs",
     "drill:dashboard": "node --env-file=.env scripts/phase2-dashboard-drills.mjs",

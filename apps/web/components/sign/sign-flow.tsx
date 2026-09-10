@@ -42,6 +42,13 @@ type Struct = ReturnType<typeof toStruct>;
 type Existing = { id: string; permissionHash: Hex; approveTx: Hex | null; revokedAt: string | null; revokeTx: Hex | null; permission: any };
 
 const CHAIN_HEX = "0x14a34"; // 84532
+const FAUCETS = "https://docs.base.org/get-started/get-funds";
+
+/** Accounts that registered in this browser session, so a different account can be called out. */
+type SessionReg = { eoa: string; permissionId: string };
+const SESSION_KEY = "retainer.sign.registered";
+const readSession = (): SessionReg[] => { try { return JSON.parse(sessionStorage.getItem(SESSION_KEY) ?? "[]"); } catch { return []; } };
+const writeSession = (v: SessionReg[]) => { try { sessionStorage.setItem(SESSION_KEY, JSON.stringify(v)); } catch { /* private mode */ } };
 const pub = createPublicClient({ chain: baseSepolia, transport: http() });
 
 /** Ask the wallet for Base Sepolia, adding the network if it does not know it. Returns whether it is now on it. */
@@ -123,6 +130,9 @@ export function SignFlow() {
   const [fundTx, setFundTx] = useState<Hex | null>(null);
   const [existing, setExisting] = useState<Existing[]>([]);
   const [revoked, setRevoked] = useState<Record<string, Hex>>({});
+  const [needEth, setNeedEth] = useState(false);
+  const [sessionRegs, setSessionRegs] = useState<SessionReg[]>([]);
+  useEffect(() => { setSessionRegs(readSession()); }, []);
   const baseSdk = useRef<any>(null);
 
   useEffect(() => { fetch("/api/permissions").then((r) => r.json()).then(setPol).catch(() => setErr("Could not load the terms this deployment offers.")); }, []);
@@ -151,24 +161,29 @@ export function SignFlow() {
   };
 
   /* ---------------------------------------------------------- connect + preflight */
-  const connect = useCallback(async (w: Announced) => {
+  /**
+   * Every check, for one account. Runs on connect and again whenever the wallet reports a different
+   * account, so the page always describes the account actually connected -- never a previous one.
+   */
+  const checkAccount = useCallback(async (p: Eip1193, addr: string, { askToSwitch = false } = {}) => {
     if (!pol) return;
-    reset(); setErr(null); setBusy("Connecting…");
+    const me = getAddress(addr);
+    setEoa(me); setOwner(null); setAccount(null); setDeployed(null); setBalance(null); setStruct(null);
+    setHash(null); setResult(null); setErr(null); setNeedEth(false); setAckUnfunded(false); setFundTx(null); setExisting([]);
+    setBusy("Checking your account…");
     try {
-      setProvider(w.provider); setWalletName(w.info.name);
-      const [addr] = await w.provider.request({ method: "eth_requestAccounts" });
-      const me = getAddress(addr);
-      setEoa(me);
+      // Ask the wallet to switch only on first connect; after that, the network check and its button say what to do.
+      const cid = await p.request({ method: "eth_chainId" });
+      setChainOk(cid === CHAIN_HEX ? true : askToSwitch ? await switchNetwork(p).catch(() => false) : false);
 
-      // Ask the wallet to switch, but do not stop if it will not: everything below reads Base Sepolia
-      // through our own client, not the wallet's. Only signing and sending need the wallet on the right
-      // network, and those stay gated on this check -- with a button beside it to fix it.
-      const cid = await w.provider.request({ method: "eth_chainId" });
-      setChainOk(cid === CHAIN_HEX ? true : await switchNetwork(w.provider).catch(() => false));
-
-      // Owner code from the chain -- not from anything the wallet says about itself.
-      setBusy("Checking your account…");
-      const kind = classifyOwnerCode(await pub.getCode({ address: me }));
+      // Owner code from the chain -- not from anything the wallet says about itself. Existing permissions are
+      // fetched whatever the owner is: an account that changed after registering must still find and revoke them.
+      const [ownerCode, mine] = await Promise.all([
+        pub.getCode({ address: me }),
+        fetch(`/api/permissions?signer=${me}`).then((r) => r.json()).catch(() => ({ permissions: [] })),
+      ]);
+      setExisting(mine.permissions ?? []);
+      const kind = classifyOwnerCode(ownerCode);
       setOwner(kind);
       if (kind.kind !== "eoa") return;
 
@@ -188,12 +203,19 @@ export function SignFlow() {
       ]);
       setHash({ local: localPermissionHash(dom, s), onchain });
 
-      const mine = await fetch(`/api/permissions?signer=${me}`).then((r) => r.json()).catch(() => ({ permissions: [] }));
-      setExisting(mine.permissions ?? []);
     } catch (e: any) {
       setErr(e?.shortMessage ?? e?.message ?? String(e));
     } finally { setBusy(null); }
   }, [pol]);
+
+  const connect = useCallback(async (w: Announced) => {
+    reset(); setErr(null); setBusy("Connecting…");
+    try {
+      setProvider(w.provider); setWalletName(w.info.name);
+      const [addr] = await w.provider.request({ method: "eth_requestAccounts" });
+      await checkAccount(w.provider, addr, { askToSwitch: true });
+    } catch (e: any) { setErr(e?.shortMessage ?? e?.message ?? String(e)); setBusy(null); }
+  }, [checkAccount]);
 
   // Live balance of the smart account, so funding is visible the moment it lands.
   useEffect(() => {
@@ -208,15 +230,29 @@ export function SignFlow() {
 
   useEffect(() => {
     if (!provider?.on) return;
-    // A different account is a different customer: start over. A different network is not --
-    // everything already shown still stands, so only the network check is re-evaluated.
-    const onAccounts = () => reset();
+    // A different account gets every check re-run for it, so a refusal for the previous account can never
+    // linger on screen. A different network changes nothing already shown, so only that check is re-evaluated.
+    const onAccounts = (accts: string[]) => { if (accts?.[0]) checkAccount(provider, accts[0]); else reset(); };
     const onChain = (id: string) => setChainOk(id === CHAIN_HEX);
     provider.on("accountsChanged", onAccounts); provider.on("chainChanged", onChain);
     return () => { provider.removeListener?.("accountsChanged", onAccounts); provider.removeListener?.("chainChanged", onChain); };
-  }, [provider]);
+  }, [provider, checkAccount]);
 
   /* ---------------------------------------------------------------- actions */
+  async function switchAccount() {
+    if (!provider) return;
+    setErr(null); setBusy(`Choose an account in ${walletName}…`);
+    try {
+      // Opens the wallet's own account picker. The chosen account arrives through accountsChanged; it is
+      // also read back here, for wallets that do not emit the event.
+      await provider.request({ method: "wallet_requestPermissions", params: [{ eth_accounts: {} }] });
+      const [addr] = await provider.request({ method: "eth_accounts" });
+      if (addr) await checkAccount(provider, addr);
+    } catch (e: any) {
+      setErr(`${walletName} did not open its account picker (${e?.shortMessage ?? e?.message ?? e}). Switch the account inside ${walletName} — this page follows the change.`);
+    } finally { setBusy(null); }
+  }
+
   async function doSwitch() {
     if (!provider) return;
     setErr(null); setBusy("Waiting for your wallet to switch network…");
@@ -233,7 +269,7 @@ export function SignFlow() {
       setFundTx(tx); setBusy("Waiting for the transfer to confirm…");
       await pub.waitForTransactionReceipt({ hash: tx });
       setBalance(await pub.readContract({ address: pol.usdc, abi: erc20Abi, functionName: "balanceOf", args: [account] }) as bigint);
-    } catch (e: any) { setErr(e?.shortMessage ?? e?.message ?? String(e)); }
+    } catch (e: any) { const m = e?.shortMessage ?? e?.message ?? String(e); setErr(m); setNeedEth(/insufficient funds|gas/i.test(m)); }
     finally { setBusy(null); }
   }
 
@@ -257,6 +293,8 @@ export function SignFlow() {
       const body = await res.json();
       if (!res.ok) throw new Error(body.error ?? "registration failed");
       setResult(body); setDeployed(true);
+      const regs = [...readSession(), { eoa, permissionId: String(body.permissionId) }];
+      writeSession(regs); setSessionRegs(regs);
       const mine = await fetch(`/api/permissions?signer=${eoa}`).then((r) => r.json()).catch(() => ({ permissions: [] }));
       setExisting(mine.permissions ?? []);
     } catch (e: any) { setErr(e?.shortMessage ?? e?.message ?? String(e)); }
@@ -277,7 +315,7 @@ export function SignFlow() {
       await fetch("/api/permissions/revoke", { method: "POST", headers: { "content-type": "application/json" },
         body: JSON.stringify({ permissionHash: p.permissionHash, txHash: tx }) });
       setRevoked((r) => ({ ...r, [p.permissionHash]: tx }));
-    } catch (e: any) { setErr(e?.shortMessage ?? e?.message ?? String(e)); }
+    } catch (e: any) { const m = e?.shortMessage ?? e?.message ?? String(e); setErr(m); setNeedEth(/insufficient funds|gas/i.test(m)); }
     finally { setBusy(null); }
   }
 
@@ -304,7 +342,12 @@ export function SignFlow() {
       const body = await res.json();
       if (!res.ok) throw new Error(body.error ?? "registration failed");
       setResult(body);
-    } catch (e: any) { setErr(e?.shortMessage ?? e?.message ?? String(e)); }
+    } catch (e: any) {
+      const m = e?.shortMessage ?? e?.message ?? String(e);
+      setErr(/not supported/i.test(m)
+        ? `${m} — Coinbase's consent screen is refusing Base Sepolia for this account (base/account-sdk#363). Connect a browser wallet instead: it does not use that screen.`
+        : m);
+    }
     finally { setBusy(null); }
   }
 
@@ -314,6 +357,11 @@ export function SignFlow() {
   const canSign = !!struct && hashOk && owner?.kind === "eoa" && chainOk === true && (funded || ackUnfunded) && !busy && !result;
 
   if (!pol) return <p className="text-sm text-neutral-500">{err ?? "Loading the terms…"}</p>;
+  const otherSessionSigners = eoa ? sessionRegs.filter((r) => r.eoa.toLowerCase() !== eoa.toLowerCase()) : [];
+  const activeExisting = existing.filter((p) => !p.revokeTx && !revoked[p.permissionHash]);
+  const switchAcctBtn = (
+    <button className={`${secondary} !px-2.5 !py-1 text-xs`} disabled={!!busy} onClick={switchAccount}>Switch account in {walletName}</button>
+  );
   const switchBtn = chainOk === false && (
     <button className={`${secondary} ml-3 !px-2.5 !py-1 text-xs`} disabled={!!busy} onClick={doSwitch}>Switch to Base Sepolia</button>
   );
@@ -335,7 +383,7 @@ export function SignFlow() {
           <Row k="Expires">{struct ? when(struct.end) : `${days} days after you sign`} — after that it can never be used again</Row>
           <Row k="Collected by">Retainer&apos;s SpendRouter <Link2 href={`${scan("address", pol.router)}#code`}>{short(pol.router)}</Link2> (verified source), which forwards the full amount in the same transaction and keeps none of it</Row>
           <Row k="Paid to">Merchant treasury <Link2 href={scan("address", pol.treasury)}>{short(pol.treasury)}</Link2></Row>
-          <Row k="To stop it">Revoke from this page at any time by connecting the same wallet: one transaction, which costs a little testnet ETH. The merchant can also revoke it. Either way it is enforced by the contract, not by us.</Row>
+          <Row k="To stop it">Revoke from this page at any time by connecting the same wallet: one transaction from your wallet, which may ask for a small network fee. The merchant can also revoke it. Either way it is enforced by the contract, not by us.</Row>
         </div>
       </Step>
 
@@ -349,30 +397,53 @@ export function SignFlow() {
               </button>
             ))}
             <button className={secondary} disabled={!!busy} onClick={useBaseAccount}>Base Account</button>
-            {wallets.length === 0 && <p className="w-full text-xs text-neutral-500 dark:text-neutral-400">No browser wallet detected. Install MetaMask or another wallet extension, or use a Base Account.</p>}
+            {wallets.length === 0 && <p className="w-full text-xs text-neutral-500 dark:text-neutral-400">No browser wallet detected. <Link2 href="https://metamask.io/download/">Install MetaMask</Link2> or another wallet extension and reload this page, or use a Base Account.</p>}
+          </div>
+        )}
+        {eoa && (
+          <div className="mb-3 rounded-xl bg-neutral-50 p-3 dark:bg-neutral-800/60">
+            <div className="text-xs text-neutral-500 dark:text-neutral-400">Connected account in {walletName}</div>
+            <div className="mt-0.5 break-all font-mono text-sm font-semibold text-neutral-900 dark:text-white">{eoa}</div>
+            {otherSessionSigners.length > 0 && (
+              <div className="mt-2 rounded-lg bg-amber-500/10 p-2.5 text-xs leading-5 text-neutral-800 ring-1 ring-amber-500/40 dark:text-neutral-200">
+                <b>This is a different account</b> from the one that registered earlier in this browser session
+                {" "}({otherSessionSigners.map((r) => `${short(r.eoa)}, permission #${r.permissionId}`).join("; ")}). {walletName} connects
+                whichever account is selected in it. If you meant that account, switch to it: <span className="ml-1 inline-block">{switchAcctBtn}</span>
+              </div>
+            )}
           </div>
         )}
         {eoa && (
           <ul className="space-y-1.5">
-            <Check ok>Connected {walletName}: <span className="font-mono">{eoa}</span></Check>
             <Check ok={chainOk === true} pending={chainOk === null}>Network is Base Sepolia{switchBtn}</Check>
             <Check ok={owner?.kind === "eoa"} pending={!owner}>Standard account — read from the chain, not from the wallet</Check>
           </ul>
         )}
         {owner?.kind === "eip7702" && (
           <div className="mt-3 rounded-lg bg-amber-500/10 p-3 text-sm leading-6 text-neutral-800 ring-1 ring-amber-500/40 dark:text-neutral-200">
-            <b>This account has been upgraded to a smart account (EIP-7702)</b>, delegating to <span className="font-mono">{short(owner.delegate)}</span>.
-            Its signatures are checked by that contract, and we have not verified it accepts this permission — so we are not asking you to sign
-            something that may fail. Use a different, standard account, or the Base Account option.
+            <b>{short(eoa)} has been upgraded to a smart account (EIP-7702)</b>, delegating to <span className="font-mono">{short(owner.delegate)}</span>.
+            {" "}{walletName} can do this by itself when an account sends a transaction through it. Signatures from an upgraded account are
+            checked by that contract, which this deployment does not accept yet — so we are not asking you to sign something that would be refused.
+            {activeExisting.length > 0 && " Permissions you already signed keep working, and you can still revoke them below."}
+            <div className="mt-2 flex flex-wrap items-center gap-2">
+              <span>To continue:</span>{switchAcctBtn}
+              <button className={`${secondary} !px-2.5 !py-1 text-xs`} disabled={!!busy} onClick={useBaseAccount}>Use a Base Account instead</button>
+            </div>
           </div>
         )}
         {owner?.kind === "contract" && (
           <div className="mt-3 rounded-lg bg-amber-500/10 p-3 text-sm leading-6 text-neutral-800 ring-1 ring-amber-500/40 dark:text-neutral-200">
             <b>This address is a contract, not a standard account.</b> A smart contract wallet cannot own the account this flow creates.
             A Safe or other multisig can pay by plain transfer instead — Retainer matches incoming transfers too.
+            <div className="mt-2 flex flex-wrap items-center gap-2"><span>Or choose a standard account:</span>{switchAcctBtn}</div>
           </div>
         )}
-        {eoa && <button className="mt-3 text-xs text-neutral-500 underline" onClick={reset}>Use a different wallet</button>}
+        {eoa && (
+          <div className="mt-3 flex flex-wrap items-center gap-3 text-xs">
+            {owner?.kind === "eoa" && switchAcctBtn}
+            <button className="text-neutral-500 underline" onClick={reset}>Use a different wallet app</button>
+          </div>
+        )}
       </Step>
 
       {account && owner?.kind === "eoa" && (
@@ -400,7 +471,7 @@ export function SignFlow() {
               <div className="mt-3 flex flex-wrap items-center gap-3">
                 <button className={secondary} disabled={!!busy || chainOk !== true} onClick={fundFromWallet}>Send {usdc(allowance)} USDC from {short(eoa)}</button>
                 <span className="text-xs text-neutral-500 dark:text-neutral-400">
-                  needs a little testnet ETH for gas · or get test USDC from <Link2 href="https://faucet.circle.com">Circle&apos;s faucet</Link2> sent straight to the address above
+                  needs a little <Link2 href={FAUCETS}>Base Sepolia ETH</Link2> for gas · or get test USDC from <Link2 href="https://faucet.circle.com">Circle&apos;s faucet</Link2> sent straight to the address above
                 </span>
               </div>
             )}
@@ -420,8 +491,17 @@ export function SignFlow() {
               <span className="font-mono">{short(account)}</span>, containing this fingerprint. <b>It must match exactly. If it does not, do not sign.</b>
             </p>
             <div className="mt-3 break-all rounded-xl bg-neutral-900 p-4 font-mono text-sm text-white dark:bg-black">{hash?.onchain ?? "computing…"}</div>
+            {activeExisting.length > 0 && !result && (
+              <p className="mt-3 rounded-lg bg-neutral-50 p-2.5 text-xs leading-5 text-neutral-700 dark:bg-neutral-800/60 dark:text-neutral-300">
+                This account already has an active permission ({activeExisting.map((p) => `#${p.id}`).join(", ")}). Signing again creates a
+                second, separate one. Either can be revoked below.
+              </p>
+            )}
             <ul className="mt-3 space-y-1.5">
-              <Check ok={hashOk} pending={!hash}>The fingerprint computed on this page equals the permission manager&apos;s own hash, read from the chain</Check>
+              <Check ok={hashOk} pending={!hash}>
+                The fingerprint computed on this page equals the permission manager&apos;s own hash, read from the chain
+                {hash && !hashOk && <span className="block text-xs text-red-600 dark:text-red-400">They differ, so signing is blocked. Reload the page; if it persists, do not sign.</span>}
+              </Check>
               <Check ok={funded || ackUnfunded}>{funded ? "Your smart account is funded" : "You have acknowledged the account is not funded yet"}</Check>
               <Check ok={chainOk === true}>Your wallet is on Base Sepolia{switchBtn}</Check>
             </ul>
@@ -438,7 +518,12 @@ export function SignFlow() {
       )}
 
       {busy && <p className="text-sm text-neutral-600 dark:text-neutral-400">{busy}</p>}
-      {err && <p className="rounded-lg bg-red-500/10 p-3 text-sm text-red-700 ring-1 ring-red-500/30 dark:text-red-300">{err}</p>}
+      {err && (
+        <p className="rounded-lg bg-red-500/10 p-3 text-sm text-red-700 ring-1 ring-red-500/30 dark:text-red-300">
+          {err}
+          {needEth && <> Your wallet needs a little Base Sepolia ETH for this transaction — <Link2 href={FAUCETS}>faucets</Link2>.</>}
+        </p>
+      )}
 
       {result && (
         <Step n={5} title="Registered" done>

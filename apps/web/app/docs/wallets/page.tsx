@@ -68,7 +68,7 @@ message      { hash: <the permission's hash, from SpendPermissionManager.getHash
       </P>
       <P>
         So the owner&apos;s code is read from the chain the moment the wallet connects, and a 7702 account is told plainly instead of being
-        asked to sign into a failure. <Cite file="apps/web/components/sign/sign-flow.tsx" line={171} /> The server checks again before
+        asked to sign into a failure. <Cite file="apps/web/components/sign/sign-flow.tsx" line={186} /> The server checks again before
         doing anything that costs gas. <Cite file="apps/web/app/api/permissions/route.js" line={109} /> This is the specific thing the
         hosted flow gets wrong: its capability check reports the chain as supported, and the popup then refuses. Here the answer comes
         from the chain, not from the wallet&apos;s description of itself. <Cite file="packages/chain/src/smart-account.js" line={119} />
@@ -80,6 +80,32 @@ message      { hash: <the permission's hash, from SpendPermissionManager.getHash
         which still validates. <Cite file="scripts/phase3-drills.mjs" line={248} />
       </Callout>
 
+      <H2 id="metamask-upgrades">MetaMask upgrades accounts by itself</H2>
+      <P>
+        In the first live session MetaMask converted both customer accounts to EIP-7702 accounts without this page asking it to. Each time it
+        happened inside a revoke: MetaMask sent the revoke through its own relayer and its <C>DelegationManager</C>, carrying an authorisation that
+        delegated the account to its <C>EIP7702StatelessDeleGator</C> in the same transaction. <Cite tx="0x2b19810bc90818b1a1baf0f6690aed03b1c3138cc0e218961b6f9d2b409b7a55" /> <Cite tx="0x48c02895cd37c435c38cd73219b7ba892c53ed5d9504fb978abcb0e151075d20" />
+      </P>
+      <P>
+        Existing permissions are unaffected, since spending checks the stored approval, and the page still lists them and lets the customer revoke them
+        whatever their account has become. <Cite file="apps/web/components/sign/sign-flow.tsx" line={183} /> A new registration from an upgraded account is
+        refused, because its signatures are judged by the delegate.
+      </P>
+      <P>
+        MetaMask also connects whichever account is selected in it, so a returning customer can arrive as a different account without noticing. The page
+        shows the connected account prominently and says when it differs from one that registered earlier in the same browser session
+        <Cite file="apps/web/components/sign/sign-flow.tsx" line={409} />; re-runs every check when the wallet reports a different account, so a refusal for
+        one account never lingers for another <Cite file="apps/web/components/sign/sign-flow.tsx" line={235} />; and offers MetaMask&apos;s own account picker
+        from the refusal <Cite file="apps/web/components/sign/sign-flow.tsx" line={248} />. That behaviour is checked in a browser, with a negative control
+        run against the previous page. <Cite file="scripts/check-sign-ui.mjs" line={93} />
+      </P>
+      <Callout kind="note" title="Tested, not yet accepted: MetaMask's delegator">
+        MetaMask&apos;s delegator validates a signature with plain ECDSA against the account&apos;s own address, adding no wrapping of its own. With a throwaway
+        key delegated to it, and every read pinned to that block, it accepts the customer&apos;s typed-data signature and a full <C>approveWithSignature</C> with
+        account creation succeeds; the same message signed by any other key is refused on both paths. <Cite tx="0x930de800f78638f8f2457e5b5b0d182f44fb73807da704d56f83f39a97fdebe2" /> Accepting this one delegate would let
+        customers MetaMask has upgraded register again. It is not accepted yet — that is a decision, not a default.
+      </Callout>
+
       <H2 id="consent">The consent screen is the whole consent</H2>
       <P>
         Coinbase&apos;s screen shows the terms. MetaMask shows an opaque hash. So on this path the customer&apos;s understanding rests entirely
@@ -88,8 +114,8 @@ message      { hash: <the permission's hash, from SpendPermissionManager.getHash
       <UL>
         <li>The terms come first, before any wallet is connected: token, exact cap, period, start, expiry, who collects, where it goes, and how to stop it.</li>
         <li>Every figure is rendered from the exact struct that gets hashed and signed.</li>
-        <li>The sign button stays disabled until the hash computed on the page equals the manager&apos;s own <C>getHash</C>, read from the chain. <Cite file="apps/web/components/sign/sign-flow.tsx" line={312} /> <Cite file="apps/web/components/sign/sign-flow.tsx" line={314} /></li>
-        <li>That same hash is shown as the fingerprint the wallet will display, with an instruction not to sign if it differs — which turns a blind signature into one the customer can check. <Cite file="apps/web/components/sign/sign-flow.tsx" line={420} /></li>
+        <li>The sign button stays disabled until the hash computed on the page equals the manager&apos;s own <C>getHash</C>, read from the chain. <Cite file="apps/web/components/sign/sign-flow.tsx" line={355} /> <Cite file="apps/web/components/sign/sign-flow.tsx" line={357} /></li>
+        <li>That same hash is shown as the fingerprint the wallet will display, with an instruction not to sign if it differs — which turns a blind signature into one the customer can check. <Cite file="apps/web/components/sign/sign-flow.tsx" line={491} /></li>
         <li>The server recomputes the hash itself and refuses a mismatch, so a page that showed one thing and submitted another is caught. <Cite file="apps/web/app/api/permissions/route.js" line={85} /></li>
       </UL>
 
@@ -98,7 +124,7 @@ message      { hash: <the permission's hash, from SpendPermissionManager.getHash
         Charges draw from the smart account, not from the customer&apos;s wallet address, and it starts empty. A customer has to move USDC
         into an address they had never seen a minute earlier. The sign page makes this its own step, with the live balance, a one-click
         transfer from the connected wallet, and an explicit acknowledgement if they choose to sign first.
-        <Cite file="apps/web/components/sign/sign-flow.tsx" line={381} />
+        <Cite file="apps/web/components/sign/sign-flow.tsx" line={452} />
       </P>
       <Callout kind="warn" title="Not yet built: funding with a signature alone">
         USDC supports EIP-3009: the customer signs one more typed-data message authorising a transfer from their wallet to their smart
@@ -132,10 +158,11 @@ message      { hash: <the permission's hash, from SpendPermissionManager.getHash
       <H2 id="revoke">Revoking</H2>
       <P>
         The manager accepts <C>revoke</C> only from the account itself. <Cite file="contracts/src/SpendPermissionManager.sol" line={397} /> The
-        account accepts <C>execute</C> from its owner, so the customer&apos;s wallet sends one transaction:
-        <C>account.execute(manager, revoke(permission))</C>. <Cite file="apps/web/components/sign/sign-flow.tsx" line={273} /> It costs a
-        little testnet ETH — the one step on this path the customer pays for. The drill sends exactly that from the customer&apos;s own key and
-        confirms the permission is revoked on-chain. <Cite file="scripts/phase3-drills.mjs" line={258} />
+        account accepts <C>execute</C> from its owner, so the page asks the customer&apos;s wallet for one call:
+        <C>account.execute(manager, revoke(permission))</C>. <Cite file="apps/web/components/sign/sign-flow.tsx" line={311} /> The drill sends
+        exactly that from the customer&apos;s own key and confirms the permission is revoked on-chain. <Cite file="scripts/phase3-drills.mjs" line={258} /> In
+        the live session MetaMask submitted the same call through its own relayer instead, and upgraded the account in the same transaction; the
+        revocation landed all the same. <Cite tx="0x2b19810bc90818b1a1baf0f6690aed03b1c3138cc0e218961b6f9d2b409b7a55" />
       </P>
       <P>
         Nothing indexes the revocation event, and a customer&apos;s revoke never passes through our server, so the page reports it afterwards.

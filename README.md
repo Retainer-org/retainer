@@ -105,6 +105,15 @@ through `/sign`, end to end — no Base Account, and no Coinbase consent screen.
 | The fingerprint on the page matched the hash MetaMask displayed | observed by the operator during the session |
 | The customer funded their smart account, 20 USDC | [`0xd7b54e9e…8a4d6`](https://sepolia.basescan.org/tx/0xd7b54e9e251f1da863731753678c4c368af928e5e3ff1354ae24391600c8a4d6) |
 | First charge: 1.000000 USDC to the treasury, confirmed by the reconciler | [`0x36b5468c…8dfba`](https://sepolia.basescan.org/tx/0x36b5468cc65fb1a307ff75d5039f6a01d1b40760e1c53264635c7818a3e8dfba) |
+| The customer revoked #18 from the page, with the same wallet | [`0x2b19810b…b7a55`](https://sepolia.basescan.org/tx/0x2b19810bc90818b1a1baf0f6690aed03b1c3138cc0e218961b6f9d2b409b7a55) |
+| The next charge against #18 was refused by the pre-flight: `REVOKED`, terminal, no transaction signed or sent | none, by design — executor nonce and balance unchanged |
+
+Sign, charge and revoke are all proven with a browser wallet. One thing the session
+surfaced that no drill could: **MetaMask upgraded the account to EIP-7702 inside the
+revoke**, relaying it through its own `DelegationManager`. Existing permissions keep
+working, but a new registration from an upgraded account is refused until MetaMask's
+delegator is accepted — it has been tested and validates the signature, and whether to
+accept it is an open decision. See `/docs/wallets#metamask-upgrades`.
 
 The mechanism — an EOA-owned `CoinbaseSmartWallet`, a typed-data signature, and
 ERC-6492 deployment inside `approveWithSignature` — is described at `/docs/wallets`
