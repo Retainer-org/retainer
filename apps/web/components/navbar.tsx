@@ -14,6 +14,7 @@ const links = [
   { title: "Docs", href: "/docs" },
   { title: "Source", href: "https://github.com/Retainer-org/retainer", external: true },
   { title: "Try it (testnet)", href: "/sign" },
+  { title: "Your permissions", href: "/account" },
 ];
 
 export const Navbar = () => {

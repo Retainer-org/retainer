@@ -5,3 +5,4 @@ export * from './client.js';
 export * from './classify.js';
 export * from './smart-account.js';
 export * from './gastank.js';
+export * from './signin.js';

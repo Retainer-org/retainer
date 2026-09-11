@@ -40,7 +40,7 @@ const erc20 = parseAbi(['function transfer(address to, uint256 value) returns (b
 const managerReads = parseAbi(['function isRevoked((address account,address spender,address token,uint160 allowance,uint48 period,uint48 start,uint48 end,uint256 salt,bytes extraData) spendPermission) view returns (bool)']);
 
 let pass = 0, fail = 0;
-const EXPECTED = 18;
+const EXPECTED = 19;
 const check = (l, ok, d = '') => { ok ? pass++ : fail++; console.log(`  [${ok ? 'PASS' : 'FAIL'}] ${l}${d ? ` — ${d}` : ''}`); return ok; };
 const hashes = [];
 const note = (label, hash) => { hashes.push([label, hash]); console.log(`  tx  ${label}: ${hash}`); };
@@ -217,15 +217,27 @@ try {
   }, 90_000, 3000);
   check('its expected payment is settled (paid)', ep?.s === 'paid', `expected payment #${ep?.id}: ${ep?.s}`);
 
-  // ------------------------------------------------ 4. revoked by the customer, from the page
-  console.log('\n=== revoke ===');
-  if (!(await click('Revoke', true, 15000))) {
-    // The list is loaded for the connected account; a fresh load shows it for a returning customer.
-    await send('Page.navigate', { url: `${BASE}/sign` }, S);
-    await until((t) => t.includes(WALLET)); await click(WALLET);
-    await untilJs(`[...document.querySelectorAll('button')].some((b) => b.textContent.trim() === 'Revoke' && !b.disabled)`, 60000);
-    await click('Revoke', true);
+  // ------------------------------------------------ 4. revoked by the customer, from their permissions page
+  console.log('\n=== revoke, from /account ===');
+  await send('Page.navigate', { url: `${BASE}/account` }, S);
+  await until((t) => t.includes(WALLET)); await click(WALLET);
+  await click('Sign in with');
+  await untilJs(`!!document.querySelector('[data-permission="${perm.id}"]')`, 60000);
+  if (process.env.SHOTS) {   // the active card, with a real charge against it, as the customer sees it
+    const { mkdirSync, writeFileSync } = await import('node:fs');
+    mkdirSync(process.env.SHOTS, { recursive: true });
+    for (const [w, scheme] of [[390, 'light'], [390, 'dark'], [1280, 'light']]) {
+      await send('Emulation.setDeviceMetricsOverride', { width: w, height: 1800, deviceScaleFactor: 1, mobile: w < 500 }, S);
+      await send('Emulation.setEmulatedMedia', { features: [{ name: 'prefers-color-scheme', value: scheme }] }, S);
+      await sleep(800);
+      const { result: { data } } = await send('Page.captureScreenshot', { format: 'png', captureBeyondViewport: true }, S);
+      writeFileSync(join(process.env.SHOTS, `account-active-${scheme}-${w}.png`), Buffer.from(data, 'base64'));
+    }
+    await send('Emulation.setDeviceMetricsOverride', { width: 1280, height: 1800, deviceScaleFactor: 1, mobile: false }, S);
   }
+  await click('Revoke…');
+  check('revoking asks for confirmation first, saying what it does', await untilJs(`/No further charges can be taken under it/.test(document.body.innerText)`, 10000));
+  await click('Revoke permission');
   const rv = await poll(async () => {
     const r = await one(`SELECT revoked_tx_hash, revoked_at FROM permissions WHERE id = $1`, [perm.id]);
     return { ...r, done: !!r.revoked_tx_hash };
@@ -237,11 +249,11 @@ try {
     check('sent by the customer, succeeded, and the manager reports it revoked at that block', rr.status === 'success' && getAddress(rr.from) === getAddress(me.address) && revoked === true);
     note(`customer revoked permission #${perm.id} from the page`, rv.revoked_tx_hash);
   } else check('sent by the customer, succeeded, and the manager reports it revoked at that block', false, 'no revoke recorded');
-  // The permission's own row must say revoked, with its transaction -- and no error on the page.
-  const rowText = `[...document.querySelectorAll('li')].find((li) => li.innerText.includes('#${perm.id} ·'))?.innerText ?? ''`;
-  await untilJs(`(${rowText}).includes('revoked ·')`, 20000);
-  const row = await js(rowText); const errBox = await js(`document.querySelector('.bg-red-500\\/10')?.innerText ?? null`);
-  check(`the page shows #${perm.id} as revoked, with its transaction, and no error`, row.includes('revoked ·') && !errBox, errBox ?? row.replace(/\s+/g, ' '));
+  // The permission's own card must say Revoked, with its transaction -- and no error on the page.
+  const cardText = `document.querySelector('[data-permission="${perm.id}"]')?.innerText ?? ''`;
+  await untilJs(`/Revoked in/.test(${cardText})`, 20000);
+  const row = await js(cardText); const errBox = await js(`document.querySelector('.bg-red-500\\/10')?.innerText ?? null`);
+  check(`the permissions page shows #${perm.id} as revoked, with its transaction, and no error`, /Revoked in 0x/.test(row) && !errBox, errBox ?? row.replace(/\s+/g, ' ').slice(0, 200));
 } catch (e) {
   check(`the loop crashed: ${e?.stack ?? e?.message ?? e}`, false);
 } finally {

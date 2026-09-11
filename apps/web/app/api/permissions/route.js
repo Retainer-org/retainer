@@ -13,36 +13,23 @@ export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
 /**
- * Without parameters: what the page needs to build a permission the server will
- * accept. No secrets.
+ * What the page needs to build a permission the server will accept. No secrets.
  *
- * With ?signer=0x...: the permissions that EOA registered, so a returning
- * customer can find and revoke them. Everything returned is already public
- * on-chain; this only saves them reconstructing it.
+ * It used to list any address's permissions given ?signer=0x..., to anyone who asked.
+ * That is gone: a customer's own permissions are served only at /api/me/permissions,
+ * to a browser that has proven, by signing in, that it controls the address.
  */
 export async function GET(req) {
   const signer = new URL(req.url).searchParams.get('signer');
-  if (!signer) {
-    const pol = publicPolicy();
-    // Registration also closes when the executor's gas is low, so no one signs into a refusal.
-    const tank = pol.registrationEnabled ? await readGasTank(publicClient(), config().executor).catch(() => null) : null;
-    const gasLow = Boolean(tank && !tank.registrationOpen);
-    return NextResponse.json({ ...pol, registrationEnabled: pol.registrationEnabled && !gasLow,
-      registrationClosedReason: !pol.registrationEnabled ? 'no_executor_key' : gasLow ? 'gas_tank_low' : null });
+  if (signer !== null) {
+    return NextResponse.json({ code: 'moved', error: 'Listing permissions by address was removed. Sign in at /account to see your own.' }, { status: 410 });
   }
-  if (!isAddress(signer)) return NextResponse.json({ code: 'bad_request', error: 'signer is not an address' }, { status: 400 });
-  const { rows } = await query(
-    `SELECT id, permission_hash, account, spender, token, allowance, period_seconds, start_ts, end_ts, salt, extra_data,
-            approved_tx_hash, revoked_at, revoked_tx_hash, created_at
-       FROM permissions WHERE lower(signer_eoa) = lower($1) ORDER BY id DESC LIMIT 20`, [signer]);
-  return NextResponse.json({
-    permissions: rows.map((r) => ({
-      id: String(r.id), permissionHash: r.permission_hash, approveTx: r.approved_tx_hash,
-      revokedAt: r.revoked_at ? new Date(r.revoked_at).toISOString() : null, revokeTx: r.revoked_tx_hash,
-      permission: { account: r.account, spender: r.spender, token: r.token, allowance: String(r.allowance),
-        period: Number(r.period_seconds), start: Number(r.start_ts), end: Number(r.end_ts), salt: String(r.salt), extraData: r.extra_data },
-    })),
-  });
+  const pol = publicPolicy();
+  // Registration also closes when the executor's gas is low, so no one signs into a refusal.
+  const tank = pol.registrationEnabled ? await readGasTank(publicClient(), config().executor).catch(() => null) : null;
+  const gasLow = Boolean(tank && !tank.registrationOpen);
+  return NextResponse.json({ ...pol, registrationEnabled: pol.registrationEnabled && !gasLow,
+    registrationClosedReason: !pol.registrationEnabled ? 'no_executor_key' : gasLow ? 'gas_tank_low' : null });
 }
 
 /**

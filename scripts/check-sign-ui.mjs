@@ -17,6 +17,14 @@
  */
 import { spawn } from 'node:child_process';
 import { privateKeyToAccount, generatePrivateKey } from 'viem/accounts';
+import { publicClient, config, deriveSmartAccount, erc20Abi } from '@retainer/chain';
+
+/** USDC held by the smart account an EOA owns, read from the chain. */
+async function smartBalance(eoa) {
+  const pubc = publicClient(), cfg = config();
+  const acct = await deriveSmartAccount(pubc, eoa, cfg.manager);
+  return pubc.readContract({ address: cfg.usdc, abi: erc20Abi, functionName: 'balanceOf', args: [acct] });
+}
 
 const BASE = process.env.WEB_BASE_URL || 'http://localhost:3017';
 const CHROME = process.env.CHROME || '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome';
@@ -118,19 +126,27 @@ try {
 
   console.log('\n=== a returning customer MetaMask upgraded when they revoked: accepted ===');
   await to(RETURNING);
-  t = await until((t) => t.includes(RETURNING) && t.includes('#19') && t.includes('Check the fingerprint'));
+  t = await until((t) => t.includes(RETURNING) && t.includes('Check the fingerprint'));
   check('not refused: no 7702 refusal panel', !t.includes('upgraded to a smart account (EIP-7702)'));
   check('the account check says why it is accepted', t.includes('verified delegator — accepted'));
-  check('their permissions are listed', t.includes('#18') && t.includes('#19'));
-  check('#19 can still be revoked from the page', await js(`[...document.querySelectorAll('button')].some((b) => b.textContent.trim() === 'Revoke' && !b.disabled)`) === true);
+  // Permissions are served only after sign-in, at /account -- never listed here by address.
+  check('their permissions are not listed on the sign page (no data by address)', !t.includes('#18') && !t.includes('#19 ·'));
+  check('the page points them to their permissions page to revoke', t.includes('your permissions page') && await js(`[...document.querySelectorAll('a')].some((a) => a.getAttribute('href') === '/account')`) === true);
   check('they can register again: the funding and fingerprint steps are shown', t.includes('Put USDC in your smart account') && t.includes('Check the fingerprint'));
   check('no "different account" notice for the account that registered in this session', !t.includes('This is a different account'));
 
   console.log('\n=== the other upgraded account, with 20 USDC left in its smart account ===');
   await to(WITH_FUNDS);
-  t = await until((t) => t.includes(WITH_FUNDS) && t.includes('Withdraw'));
+  // Its owner withdrew the 20 USDC from the page earlier; the offer must follow the chain, whatever it holds now.
+  const held = await smartBalance(WITH_FUNDS);
+  t = await until((t) => t.includes(WITH_FUNDS) && t.includes('Check the fingerprint'));
   check('accepted too: no refusal panel', !t.includes('upgraded to a smart account (EIP-7702)'));
-  check('the owner is offered their money back: "Withdraw 20.00 USDC"', await js(`[...document.querySelectorAll('button')].some((b) => b.textContent.includes('Withdraw 20.00 USDC') && !b.disabled)`) === true);
+  // The balance is read by the page a moment after the account checks; wait for it before judging the offer.
+  const offerExpr = `[...document.querySelectorAll('button')].find((b) => b.textContent.includes('Withdraw'))?.textContent ?? null`;
+  let offer = null;
+  for (let i = 0; i < 40 && (held > 0n ? !offer : i < 10); i++) { offer = await js(offerExpr); await sleep(500); }
+  check(`the withdraw offer matches the smart account's on-chain balance (${(Number(held) / 1e6).toFixed(2)} USDC)`,
+    held > 0n ? offer?.includes(`Withdraw ${(Number(held) / 1e6).toFixed(2)} USDC`) : offer === null, offer ?? 'no withdraw button');
   check('and told it differs from the account that registered earlier in this session', t.includes('This is a different account'));
   check('a deployment that can register shows no "not switched on" banner', !t.includes('Signing is not switched on'));
 

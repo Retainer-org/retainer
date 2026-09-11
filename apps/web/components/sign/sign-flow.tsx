@@ -1,14 +1,17 @@
 "use client";
 
+import Link from "next/link";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import {
-  createPublicClient, createWalletClient, custom, encodeFunctionData, getAddress, http, type Hex,
-} from "viem";
+import { createWalletClient, custom, encodeFunctionData, getAddress, type Hex } from "viem";
 import { baseSepolia } from "viem/chains";
 import {
   checkOwner, deriveSmartAccount, erc20Abi, localPermissionHash, managerDomain,
   smartWalletAbi, smartWalletTypedData, spendPermissionManagerAbi, toStruct,
 } from "@retainer/chain";
+import {
+  CHAIN_HEX, Check, FAUCETS, Link2, Row, Step, periodWords, primary, pub, scan, secondary, short, switchNetwork,
+  useInjectedWallets, usdc, when, type Announced, type Eip1193,
+} from "./ui";
 
 /**
  * Sign a spend permission with any injected wallet (MetaMask, Rabby, ...) or a Base Account.
@@ -30,10 +33,6 @@ import {
  */
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
-declare global { interface Window { ethereum?: any } }
-type Eip1193 = { request: (a: { method: string; params?: unknown[] | object }) => Promise<any>; on?: any; removeListener?: any };
-type Announced = { info: { uuid: string; name: string; icon?: string; rdns: string }; provider: Eip1193 };
-
 type Policy = {
   chainId: number; manager: Hex; router: Hex; usdc: Hex; executor: Hex; treasury: Hex; factory: Hex; extraData: Hex;
   allowance: string; periodSeconds: number; periodInDays: number; durationSeconds: number;
@@ -41,80 +40,22 @@ type Policy = {
   registrationClosedReason?: "no_executor_key" | "gas_tank_low" | null;
 };
 type Struct = ReturnType<typeof toStruct>;
-type Existing = { id: string; permissionHash: Hex; approveTx: Hex | null; revokedAt: string | null; revokeTx: Hex | null; permission: any };
-
-const CHAIN_HEX = "0x14a34"; // 84532
-const FAUCETS = "https://docs.base.org/get-started/get-funds";
 
 /** Accounts that registered in this browser session, so a different account can be called out. */
 type SessionReg = { eoa: string; permissionId: string };
 const SESSION_KEY = "retainer.sign.registered";
 const readSession = (): SessionReg[] => { try { return JSON.parse(sessionStorage.getItem(SESSION_KEY) ?? "[]"); } catch { return []; } };
 const writeSession = (v: SessionReg[]) => { try { sessionStorage.setItem(SESSION_KEY, JSON.stringify(v)); } catch { /* private mode */ } };
-const pub = createPublicClient({ chain: baseSepolia, transport: http() });
 
-/** Ask the wallet for Base Sepolia, adding the network if it does not know it. Returns whether it is now on it. */
-async function switchNetwork(p: Eip1193): Promise<boolean> {
-  try { await p.request({ method: "wallet_switchEthereumChain", params: [{ chainId: CHAIN_HEX }] }); }
-  catch (e: any) {
-    if (e?.code !== 4902 && e?.data?.originalError?.code !== 4902) throw e;
-    await p.request({ method: "wallet_addEthereumChain", params: [{
-      chainId: CHAIN_HEX, chainName: "Base Sepolia", nativeCurrency: { name: "Ether", symbol: "ETH", decimals: 18 },
-      rpcUrls: ["https://sepolia.base.org"], blockExplorerUrls: ["https://sepolia.basescan.org"] }] });
-  }
-  return (await p.request({ method: "eth_chainId" })) === CHAIN_HEX;
-}
-
-/* ------------------------------------------------------------------ formatting */
-const usdc = (v: bigint | string, dp = 2) => (Number(BigInt(v)) / 1e6).toFixed(dp);
-const short = (a?: string | null) => (a ? `${a.slice(0, 6)}…${a.slice(-4)}` : "");
-const when = (unix: number) => new Date(unix * 1000).toISOString().replace("T", " ").slice(0, 16) + " UTC";
-const periodWords = (s: number) =>
-  s % 86400 === 0 ? (s === 86400 ? "day" : `${s / 86400}-day period`) : s % 3600 === 0 ? `${s / 3600}-hour period` : `${s}-second period`;
-const scan = (kind: "address" | "tx", v: string) => `https://sepolia.basescan.org/${kind}/${v}`;
 const randomSalt = () => {
   const b = new Uint8Array(32); crypto.getRandomValues(b);
   return BigInt("0x" + Array.from(b, (x) => x.toString(16).padStart(2, "0")).join(""));
 };
 
-function Row({ k, children }: { k: string; children: React.ReactNode }) {
-  return (
-    <div className="grid grid-cols-[7.5rem_1fr] gap-3 border-t border-neutral-100 py-2.5 text-sm first:border-t-0 dark:border-white/5">
-      <div className="text-neutral-500 dark:text-neutral-400">{k}</div>
-      <div className="min-w-0 break-words text-neutral-900 dark:text-neutral-100">{children}</div>
-    </div>
-  );
-}
-function Link2({ href, children }: { href: string; children: React.ReactNode }) {
-  return <a href={href} target="_blank" rel="noopener noreferrer" className="text-brand-primary hover:underline">{children}</a>;
-}
-function Step({ n, title, done, children }: { n: number; title: string; done?: boolean; children: React.ReactNode }) {
-  return (
-    <section className="rounded-2xl bg-white p-5 shadow-sm ring-1 ring-black/10 dark:bg-neutral-900 dark:ring-white/10">
-      <h2 className="mb-3 flex items-center gap-2 text-sm font-semibold text-neutral-900 dark:text-white">
-        <span className={`flex size-6 items-center justify-center rounded-full font-mono text-xs ${done ? "bg-emerald-600 text-white" : "bg-neutral-900 text-white dark:bg-white dark:text-black"}`}>{done ? "✓" : n}</span>
-        {title}
-      </h2>
-      {children}
-    </section>
-  );
-}
-function Check({ ok, pending, children }: { ok: boolean; pending?: boolean; children: React.ReactNode }) {
-  return (
-    <li className="flex items-start gap-2 text-sm">
-      <span className={`mt-0.5 font-mono text-xs ${pending ? "text-neutral-400" : ok ? "text-emerald-600 dark:text-emerald-400" : "text-red-600 dark:text-red-400"}`}>{pending ? "…" : ok ? "✓" : "✗"}</span>
-      <span className="text-neutral-700 dark:text-neutral-300">{children}</span>
-    </li>
-  );
-}
-const btn = "rounded-lg px-4 py-2 text-sm font-medium disabled:cursor-not-allowed disabled:opacity-40";
-const primary = `${btn} bg-neutral-900 text-white hover:bg-neutral-800 dark:bg-white dark:text-black dark:hover:bg-neutral-200`;
-const secondary = `${btn} ring-1 ring-neutral-300 text-neutral-800 hover:bg-neutral-50 dark:ring-neutral-700 dark:text-neutral-200 dark:hover:bg-neutral-800`;
-
 /* ======================================================================= */
 export function SignFlow() {
   const [pol, setPol] = useState<Policy | null>(null);
-  const [wallets, setWallets] = useState<Announced[]>([]);
+  const wallets = useInjectedWallets();
   const [provider, setProvider] = useState<Eip1193 | null>(null);
   const [walletName, setWalletName] = useState("");
   const [eoa, setEoa] = useState<Hex | null>(null);
@@ -130,8 +71,6 @@ export function SignFlow() {
   const [err, setErr] = useState<string | null>(null);
   const [result, setResult] = useState<any>(null);
   const [fundTx, setFundTx] = useState<Hex | null>(null);
-  const [existing, setExisting] = useState<Existing[]>([]);
-  const [revoked, setRevoked] = useState<Record<string, Hex>>({});
   const [needEth, setNeedEth] = useState(false);
   const [sessionRegs, setSessionRegs] = useState<SessionReg[]>([]);
   useEffect(() => { setSessionRegs(readSession()); }, []);
@@ -139,27 +78,12 @@ export function SignFlow() {
 
   useEffect(() => { fetch("/api/permissions").then((r) => r.json()).then(setPol).catch(() => setErr("Could not load the terms this deployment offers.")); }, []);
 
-  // EIP-6963: every injected wallet announces itself; window.ethereum is the fallback.
-  useEffect(() => {
-    const seen = new Map<string, Announced>();
-    const onAnnounce = (e: any) => { seen.set(e.detail.info.rdns, e.detail); setWallets([...seen.values()]); };
-    window.addEventListener("eip6963:announceProvider", onAnnounce);
-    window.dispatchEvent(new Event("eip6963:requestProvider"));
-    const t = setTimeout(() => {
-      if (seen.size === 0 && window.ethereum) {
-        seen.set("injected", { info: { uuid: "injected", name: "Browser wallet", rdns: "injected" }, provider: window.ethereum });
-        setWallets([...seen.values()]);
-      }
-    }, 400);
-    return () => { window.removeEventListener("eip6963:announceProvider", onAnnounce); clearTimeout(t); };
-  }, []);
-
   const allowance = pol ? BigInt(pol.allowance) : 0n;
   const wc = useMemo(() => (provider && eoa ? createWalletClient({ account: eoa, chain: baseSepolia, transport: custom(provider) }) : null), [provider, eoa]);
 
   const reset = () => {
     setEoa(null); setOwner(null); setAccount(null); setDeployed(null); setBalance(null); setStruct(null);
-    setHash(null); setResult(null); setErr(null); setAckUnfunded(false); setFundTx(null); setExisting([]); setChainOk(null);
+    setHash(null); setResult(null); setErr(null); setAckUnfunded(false); setFundTx(null); setChainOk(null);
   };
 
   /* ---------------------------------------------------------- connect + preflight */
@@ -171,20 +95,16 @@ export function SignFlow() {
     if (!pol) return;
     const me = getAddress(addr);
     setEoa(me); setOwner(null); setAccount(null); setDeployed(null); setBalance(null); setStruct(null);
-    setHash(null); setResult(null); setErr(null); setNeedEth(false); setAckUnfunded(false); setFundTx(null); setExisting([]);
+    setHash(null); setResult(null); setErr(null); setNeedEth(false); setAckUnfunded(false); setFundTx(null);
     setBusy("Checking your account…");
     try {
       // Ask the wallet to switch only on first connect; after that, the network check and its button say what to do.
       const cid = await p.request({ method: "eth_chainId" });
       setChainOk(cid === CHAIN_HEX ? true : askToSwitch ? await switchNetwork(p).catch(() => false) : false);
 
-      // Owner code from the chain -- not from anything the wallet says about itself. Existing permissions are
-      // fetched whatever the owner is: an account that changed after registering must still find and revoke them.
-      const [kind, mine] = await Promise.all([
-        checkOwner(pub, me),
-        fetch(`/api/permissions?signer=${me}`).then((r) => r.json()).catch(() => ({ permissions: [] })),
-      ]);
-      setExisting(mine.permissions ?? []);
+      // Owner code from the chain -- not from anything the wallet says about itself. A customer's existing
+      // permissions are not listed here: they are served only after sign-in, at /account.
+      const kind = await checkOwner(pub, me);
       setOwner(kind);
       if (!kind.accepted) return;
 
@@ -310,43 +230,7 @@ export function SignFlow() {
       setResult(body); setDeployed(true);
       const regs = [...readSession(), { eoa, permissionId: String(body.permissionId) }];
       writeSession(regs); setSessionRegs(regs);
-      const mine = await fetch(`/api/permissions?signer=${eoa}`).then((r) => r.json()).catch(() => ({ permissions: [] }));
-      setExisting(mine.permissions ?? []);
     } catch (e: any) { setErr(e?.shortMessage ?? e?.message ?? String(e)); }
-    finally { setBusy(null); }
-  }
-
-  /** Ask the server to verify and record a revoke. Early reads are retried; a real refusal is returned as-is. */
-  async function recordRevoke(permissionHash: string, txHash: string): Promise<{ ok: true } | { ok: false; error: string }> {
-    let error = "";
-    for (let i = 0; i < 3; i++) {
-      const r = await fetch("/api/permissions/revoke", { method: "POST", headers: { "content-type": "application/json" },
-        body: JSON.stringify({ permissionHash, txHash }) }).catch(() => null);
-      const j = r ? await r.json().catch(() => ({})) : {};
-      if (r?.ok) return { ok: true };
-      error = j.error ?? (r ? `HTTP ${r.status}` : "network error");
-      if (r && r.status < 500 && j.code !== "not_confirmed" && j.code !== "not_revoked") break;
-      await new Promise((res) => setTimeout(res, 2000 * (i + 1)));
-    }
-    return { ok: false, error };
-  }
-
-  async function revoke(p: Existing) {
-    if (!wc || !eoa || !pol) return;
-    setErr(null); setBusy("Waiting for your wallet — revoking costs a little testnet ETH…");
-    try {
-      const s = toStruct(p.permission);
-      // The manager only accepts revoke() from the account itself, and the account accepts
-      // execute() from its owner -- so the customer's EOA calls account.execute(manager, revoke).
-      const tx = await wc.writeContract({ address: s.account, abi: smartWalletAbi, functionName: "execute", account: eoa, chain: baseSepolia,
-        args: [pol.manager, 0n, encodeFunctionData({ abi: spendPermissionManagerAbi, functionName: "revoke", args: [s] })] });
-      setBusy("Waiting for the revocation to confirm…");
-      await pub.waitForTransactionReceipt({ hash: tx });
-      setRevoked((r) => ({ ...r, [p.permissionHash]: tx }));
-      // The contract has revoked it. Say so only as far as the server has verified and recorded it.
-      const recorded = await recordRevoke(p.permissionHash, tx);
-      if (!recorded.ok) setErr(`Revoked on-chain in ${short(tx)} — the contract enforces it. Retainer has not recorded it yet (${recorded.error}); reload this page to try the record again.`);
-    } catch (e: any) { const m = e?.shortMessage ?? e?.message ?? String(e); setErr(m); setNeedEth(/insufficient funds|gas/i.test(m)); }
     finally { setBusy(null); }
   }
 
@@ -389,7 +273,6 @@ export function SignFlow() {
 
   if (!pol) return <p className="text-sm text-neutral-500">{err ?? "Loading the terms…"}</p>;
   const otherSessionSigners = eoa ? sessionRegs.filter((r) => r.eoa.toLowerCase() !== eoa.toLowerCase()) : [];
-  const activeExisting = existing.filter((p) => !p.revokeTx && !revoked[p.permissionHash]);
   const switchAcctBtn = (
     <button className={`${secondary} !px-2.5 !py-1 text-xs`} disabled={!!busy} onClick={switchAccount}>Switch account in {walletName}</button>
   );
@@ -426,7 +309,7 @@ export function SignFlow() {
           <Row k="Expires">{struct ? when(struct.end) : `${days} days after you sign`} — after that it can never be used again</Row>
           <Row k="Collected by">Retainer&apos;s SpendRouter <Link2 href={`${scan("address", pol.router)}#code`}>{short(pol.router)}</Link2> (verified source), which forwards the full amount in the same transaction and keeps none of it</Row>
           <Row k="Paid to">Merchant treasury <Link2 href={scan("address", pol.treasury)}>{short(pol.treasury)}</Link2></Row>
-          <Row k="To stop it">Revoke from this page at any time by connecting the same wallet: one transaction from your wallet, which may ask for a small network fee. The merchant can also revoke it. Either way it is enforced by the contract, not by us.</Row>
+          <Row k="To stop it">Revoke at any time from <Link href="/account" className="text-brand-primary hover:underline">your permissions page</Link> by connecting the same wallet: one transaction from your wallet, which may ask for a small network fee. The merchant can also revoke it. Either way it is enforced by the contract, not by us.</Row>
         </div>
       </Step>
 
@@ -473,7 +356,7 @@ export function SignFlow() {
             {"reason" in owner && owner.reason === "delegate_code_changed"
               ? " That delegator is one this deployment trusts, but the code at its address no longer matches the version that was verified — so it is refused until it has been reviewed again."
               : " Signatures from an upgraded account are checked by that contract, and it is not one this deployment has verified — so we are not asking you to sign something that would be refused."}
-            {activeExisting.length > 0 && " Permissions you already signed keep working, and you can still revoke them below."}
+            {" "}Permissions you already signed keep working, and you can revoke them from <Link href="/account" className="text-brand-primary hover:underline">your permissions page</Link>.
             <div className="mt-2 flex flex-wrap items-center gap-2">
               <span>To continue:</span>{switchAcctBtn}
               <button className={`${secondary} !px-2.5 !py-1 text-xs`} disabled={!!busy} onClick={useBaseAccount}>Use a Base Account instead</button>
@@ -546,12 +429,6 @@ export function SignFlow() {
               <span className="font-mono">{short(account)}</span>, containing this fingerprint. <b>It must match exactly. If it does not, do not sign.</b>
             </p>
             <div className="mt-3 break-all rounded-xl bg-neutral-900 p-4 font-mono text-sm text-white dark:bg-black">{hash?.onchain ?? "computing…"}</div>
-            {activeExisting.length > 0 && !result && (
-              <p className="mt-3 rounded-lg bg-neutral-50 p-2.5 text-xs leading-5 text-neutral-700 dark:bg-neutral-800/60 dark:text-neutral-300">
-                This account already has an active permission ({activeExisting.map((p) => `#${p.id}`).join(", ")}). Signing again creates a
-                second, separate one. Either can be revoked below.
-              </p>
-            )}
             <ul className="mt-3 space-y-1.5">
               <Check ok={hashOk} pending={!hash}>
                 The fingerprint computed on this page equals the permission manager&apos;s own hash, read from the chain
@@ -587,31 +464,13 @@ export function SignFlow() {
             {result.approveTx && <Check ok>Registration: <Link2 href={scan("tx", result.approveTx)}>{short(result.approveTx)}</Link2>{result.accountCreatedByThisTx ? " — this also created your smart account" : ""}</Check>}
             <Check ok>Fingerprint <span className="font-mono">{short(result.permissionHash)}</span></Check>
           </ul>
+          <p className="mt-4 text-sm leading-6 text-neutral-700 dark:text-neutral-300">
+            Come back to <Link href="/account" className="font-medium text-brand-primary hover:underline">your permissions page</Link> any time to see what has been
+            taken under it and to cancel it. Connect this same wallet there.
+          </p>
         </Step>
       )}
 
-      {existing.length > 0 && (
-        <Step n={6} title="Your permissions">
-          <ul className="divide-y divide-neutral-100 dark:divide-white/5">
-            {existing.map((p) => {
-              const r = revoked[p.permissionHash] ?? p.revokeTx;
-              return (
-                <li key={p.permissionHash} className="flex flex-wrap items-center justify-between gap-3 py-3 text-sm">
-                  <div>
-                    <div className="font-mono">#{p.id} · {short(p.permissionHash)}</div>
-                    <div className="text-xs text-neutral-500 dark:text-neutral-400">
-                      {usdc(p.permission.allowance)} USDC per {periodWords(p.permission.period)} · expires {when(p.permission.end)}
-                    </div>
-                  </div>
-                  {r
-                    ? <span className="text-xs text-neutral-500">revoked · <Link2 href={scan("tx", r)}>{short(r)}</Link2></span>
-                    : <button className={secondary} disabled={!!busy || chainOk !== true} title={chainOk !== true ? "Switch your wallet to Base Sepolia first" : undefined} onClick={() => revoke(p)}>Revoke</button>}
-                </li>
-              );
-            })}
-          </ul>
-        </Step>
-      )}
     </div>
   );
 }
