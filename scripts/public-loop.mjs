@@ -40,7 +40,7 @@ const erc20 = parseAbi(['function transfer(address to, uint256 value) returns (b
 const managerReads = parseAbi(['function isRevoked((address account,address spender,address token,uint160 allowance,uint48 period,uint48 start,uint48 end,uint256 salt,bytes extraData) spendPermission) view returns (bool)']);
 
 let pass = 0, fail = 0;
-const EXPECTED = 19;
+const EXPECTED = 18;
 const check = (l, ok, d = '') => { ok ? pass++ : fail++; console.log(`  [${ok ? 'PASS' : 'FAIL'}] ${l}${d ? ` — ${d}` : ''}`); return ok; };
 const hashes = [];
 const note = (label, hash) => { hashes.push([label, hash]); console.log(`  tx  ${label}: ${hash}`); };

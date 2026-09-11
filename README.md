@@ -6,6 +6,13 @@ retries, failure classification, and reconciliation.
 
 **Phase 1 — the charge engine. Base Sepolia only.**
 
+**The testnet demo is live, and anyone can try it:
+[retainer-one.vercel.app/sign](https://retainer-one.vercel.app/sign).** Connect a
+browser wallet on Base Sepolia, read the terms, sign a permission for at most 2 test
+USDC a day, and revoke it from the same page. Charges are made by the hosted worker,
+but only once an operator schedules one — nothing schedules them automatically yet.
+Test tokens only; no real money moves.
+
 ---
 
 ## ⚠️ Keys in this repo are disposable testnet keys
