@@ -159,6 +159,9 @@ export const TRUSTED_7702_DELEGATES = Object.freeze({
 });
 
 /**
+ * REGISTRATION ONLY. Sign-in deliberately uses a different rule (signInKeyHolder, in
+ * signin.js); the reasoning is there. Changing this does not change sign-in, and must not.
+ *
  * Whether an address may own a customer's smart account, decided from the chain.
  *
  *   accepted: true   a plain EOA; or a 7702 account delegating to a TRUSTED_7702_DELEGATES entry

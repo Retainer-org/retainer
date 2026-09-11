@@ -1,4 +1,5 @@
 import { getAddress } from 'viem';
+import { classifyOwnerCode } from './smart-account.js';
 
 /**
  * Sign-in: proving a wallet is yours, so the site serves you your own permissions and no one else's.
@@ -29,6 +30,34 @@ export const SIGNIN_TYPES = {
     { name: 'expiresAt', type: 'uint64' },
   ],
 };
+
+/**
+ * Who may sign in: whoever holds the key to the address. Deliberately NOT checkOwner.
+ *
+ * Sign-in and registration ask different questions, so they use different rules. Do not
+ * unify them.
+ *
+ *   Sign-in asks one thing: does the person at the keyboard hold this wallet's key? That is
+ *   answered directly -- plain ECDSA recovery of the signature against the address, done by
+ *   the caller. EIP-7702 delegation adds code to an account without taking the key away, so
+ *   this holds for a plain account and for EVERY upgraded account, whatever its delegate. The
+ *   delegate is never consulted and never trusted, and ERC-1271 is never used: an
+ *   unreviewed contract has no say in whether someone may see their own records.
+ *
+ *   Registration (checkOwner, in smart-account.js) asks something else: will the customer's
+ *   smart account, on-chain, accept signatures from this owner? There the owner's code IS the
+ *   signature checker, so its delegate must be one we reviewed -- which is why exactly one
+ *   MetaMask delegate is pinned there, and nowhere else. Getting it wrong there creates a
+ *   permission that moves money; getting sign-in right needs only the key.
+ *
+ * The one refusal: a true contract account (code that is not a 7702 delegation) has no key to
+ * sign with. It cannot register a permission either, so there is nothing for it to see.
+ */
+export async function signInKeyHolder(client, address) {
+  const k = classifyOwnerCode(await client.getCode({ address }));
+  if (k.kind === 'contract') return { accepted: false, kind: 'contract', reason: 'contract_account' };
+  return { accepted: true, kind: k.kind };   // 'eoa' | 'eip7702' -- which delegate is irrelevant here
+}
 
 export function signInTypedData({ chainId, account, origin, nonce, issuedAt, expiresAt }) {
   return {

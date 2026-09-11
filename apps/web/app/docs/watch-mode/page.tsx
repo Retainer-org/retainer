@@ -96,7 +96,7 @@ export default function WatchMode() {
       <P>
         Nothing automatically unwinds a match whose transfer no longer exists. A human would have to reverse it. That is a real
         gap, it is listed as one, and it is not described as handled.
-        <Cite file="apps/web/app/docs/limitations/page.tsx" line={17} />
+        <Cite file="apps/web/app/docs/limitations/page.tsx" line={25} />
         See <Link href="/docs/limitations#reorgs" className="text-brand-primary hover:underline">current limitations</Link>.
       </P>
     </>

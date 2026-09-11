@@ -16,7 +16,7 @@
  */
 import { readFileSync } from 'node:fs';
 import { privateKeyToAccount, generatePrivateKey } from 'viem/accounts';
-import { signInTypedData } from '@retainer/chain';
+import { signInTypedData, publicClient, classifyOwnerCode, TRUSTED_7702_DELEGATES } from '@retainer/chain';
 import { query, close } from '@retainer/db';
 
 const BASE = process.env.WEB_BASE_URL || 'http://localhost:3017';
@@ -25,9 +25,12 @@ const EVIL = 'https://evil.example';
 const A = privateKeyToAccount(readFileSync(process.env.SIGNIN_KEY_A, 'utf8').trim());
 const B = privateKeyToAccount(readFileSync(process.env.SIGNIN_KEY_B, 'utf8').trim());
 const C = privateKeyToAccount(generatePrivateKey());
+// An account upgraded by EIP-7702 to a delegate this deployment has never reviewed, and a true contract account.
+const U = process.env.SIGNIN_KEY_7702 ? privateKeyToAccount(readFileSync(process.env.SIGNIN_KEY_7702, 'utf8').trim()) : null;
+const CONTRACT = process.env.TEST_SMART_WALLET;
 
 let pass = 0, fail = 0;
-const EXPECTED = 17;
+const EXPECTED = 21;
 const check = (l, ok, d = '') => { ok ? pass++ : fail++; console.log(`  [${ok ? 'PASS' : 'FAIL'}] ${l}${d ? ` — ${d}` : ''}`); };
 
 const post = (path, body, origin = ORIGIN, cookie) => fetch(BASE + path, { method: 'POST', redirect: 'manual',
@@ -97,6 +100,20 @@ try {
   check("with A's cookie, naming B in every parameter still returns A's permissions and none of B's",
     m6.status === 200 && m6.address === A.address.toLowerCase() && ids(m6).every((i) => !bIds.includes(i)) && ids(m6).join() === aIds.join(),
     `got [${ids(m6)}], B has [${bIds}]`);
+
+  console.log('\n=== 7. accounts with code: the key is what counts, never the delegate ===');
+  const code = classifyOwnerCode(await publicClient().getCode({ address: U.address }));
+  check('precondition: the test account is upgraded by EIP-7702 to a delegate that is NOT trusted for registration',
+    code.kind === 'eip7702' && !TRUSTED_7702_DELEGATES[code.delegate.toLowerCase()], `${U.address.slice(0, 10)}… → ${code.delegate}`);
+  const f7 = await nonceFor(U);
+  const r7 = await signIn(f7, await sign(f7, A));
+  check("the upgraded account's sign-in signed by a different key is refused", r7.status === 401 && r7.code === 'bad_signature' && !r7.cookie, `${r7.status} ${r7.code}`);
+  const f7b = await nonceFor(U);
+  const r7b = await signIn(f7b, await sign(f7b, U));
+  check('control: signed with its own key, the upgraded account signs in — its delegate is never consulted', r7b.status === 200 && !!r7b.cookie, `${r7b.status} ${r7b.code ?? r7b.address}`);
+  const f7c = await nonceFor({ address: CONTRACT });
+  const r7c = await signIn(f7c, await sign(f7c, A));
+  check('a true contract account (no key) is refused', r7c.status === 409 && r7c.code === 'contract_account' && !r7c.cookie, `${r7c.status} ${r7c.code}`);
 
   console.log('\n=== two wallets, and a stranger ===');
   const fB = await nonceFor(B); const rB = await signIn(fB, await sign(fB, B));

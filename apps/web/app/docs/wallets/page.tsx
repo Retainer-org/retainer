@@ -88,9 +88,8 @@ message      { hash: <the permission's hash, from SpendPermissionManager.getHash
       </P>
       <P>
         Existing permissions are unaffected, since spending checks the stored approval. Their owner sees and revokes them on the permissions page
-        after <a href="#signing-in" className="text-brand-primary hover:underline">signing in</a> <Cite file="apps/web/components/account/account-view.tsx" line={157} /> — which applies
-        the same owner rules as registration, so an account upgraded to any delegate other than the verified one below cannot sign in there.
-        <Cite file="apps/web/app/api/session/route.js" line={51} /> A new registration from an upgraded account was
+        after <a href="#signing-in" className="text-brand-primary hover:underline">signing in</a> <Cite file="apps/web/components/account/account-view.tsx" line={157} /> — and
+        signing in needs only the key, so it works for an upgraded account whatever its delegate. <Cite file="packages/chain/src/signin.js" line={56} /> A new registration from an upgraded account was
         refused at first, because its signatures are judged by the delegate — which is what the exception below resolves.
       </P>
       <P>
@@ -111,8 +110,8 @@ message      { hash: <the permission's hash, from SpendPermissionManager.getHash
         <br /><br />
         The trust is pinned to code, not just to the address. Every check hashes the code deployed at that address and compares it with the
         version that was reviewed; if they differ, the owner is refused. <Cite file="packages/chain/src/smart-account.js" line={156} />
-        <Cite file="packages/chain/src/smart-account.js" line={180} /> Every other delegate is still refused, and so is every contract account that is not a
-        7702 delegation. <Cite file="packages/chain/src/smart-account.js" line={176} /> The server applies the same decision before any gas.
+        <Cite file="packages/chain/src/smart-account.js" line={183} /> Every other delegate is still refused, and so is every contract account that is not a
+        7702 delegation. <Cite file="packages/chain/src/smart-account.js" line={179} /> The server applies the same decision before any gas.
         <Cite file="apps/web/app/api/permissions/route.js" line={110} />
         <br /><br />
         The drill keeps all of it honest on every run: an owner delegated to MetaMask&apos;s delegator registers
@@ -195,9 +194,9 @@ message      { hash: <the permission's hash, from SpendPermissionManager.getHash
         naming it; that route now refuses. <Cite file="apps/web/app/api/permissions/route.js" line={24} />
       </P>
       <UL>
-        <li><b>The message cannot be mistaken for a permission.</b> Its domain is <C>Retainer Sign-In</C>, with no verifying contract and its own type, and it says it costs nothing and authorises no payment. <Cite file="packages/chain/src/signin.js" line={18} /></li>
-        <li><b>One nonce, one try, five minutes, one site.</b> The server issues a nonce bound to the address and the requesting origin and keeps its own copy, so it rebuilds the message itself. <Cite file="packages/db/migrations/006_session_nonces.sql" line={7} /> It refuses another origin, <Cite file="apps/web/app/api/session/route.js" line={35} /> a used nonce, <Cite file="apps/web/app/api/session/route.js" line={46} /> an expired one, <Cite file="apps/web/app/api/session/route.js" line={48} /> and spends the nonce before checking the signature. <Cite file="apps/web/app/api/session/route.js" line={55} /></li>
-        <li><b>The same owner rules as registration,</b> then a signature by the address&apos;s own key. <Cite file="apps/web/app/api/session/route.js" line={51} /> <Cite file="apps/web/app/api/session/route.js" line={61} /></li>
+        <li><b>The message cannot be mistaken for a permission.</b> Its domain is <C>Retainer Sign-In</C>, with no verifying contract and its own type, and it says it costs nothing and authorises no payment. <Cite file="packages/chain/src/signin.js" line={19} /></li>
+        <li><b>One nonce, one try, five minutes, one site.</b> The server issues a nonce bound to the address and the requesting origin and keeps its own copy, so it rebuilds the message itself. <Cite file="packages/db/migrations/006_session_nonces.sql" line={7} /> It refuses another origin, <Cite file="apps/web/app/api/session/route.js" line={38} /> a used nonce, <Cite file="apps/web/app/api/session/route.js" line={49} /> an expired one, <Cite file="apps/web/app/api/session/route.js" line={51} /> and spends the nonce before checking the signature. <Cite file="apps/web/app/api/session/route.js" line={58} /></li>
+        <li><b>Only the key — not the registration rule.</b> Sign-in needs one fact: that the person holds this wallet&apos;s key. The signature is checked by plain ECDSA recovery against the address, never through a contract, <Cite file="apps/web/app/api/session/route.js" line={64} /> so it covers a plain account and every EIP-7702-upgraded one without consulting, or trusting, its delegate. A true contract account has no key and is refused. <Cite file="apps/web/app/api/session/route.js" line={54} /> Registration keeps its own, stricter rule, because there the owner&apos;s code is what the smart account will ask to check signatures — the reasoning for the difference is beside the code. <Cite file="packages/chain/src/signin.js" line={37} /></li>
         <li><b>An HTTP-only cookie</b>, MACed with a server secret and compared in constant time, lasting 12 hours. <Cite file="apps/web/lib/session.js" line={36} /> <Cite file="apps/web/lib/session.js" line={51} /></li>
         <li><b>The address comes from the cookie and nowhere else</b> — the route reads no parameter, so there is nothing to change to see another customer. <Cite file="apps/web/app/api/me/permissions/route.js" line={22} /></li>
         <li><b>The page shows data only while the signed-in address is the connected wallet.</b> Switching accounts in the wallet clears it at once. <Cite file="apps/web/components/account/account-view.tsx" line={77} /> <Cite file="apps/web/components/account/account-view.tsx" line={80} /></li>
