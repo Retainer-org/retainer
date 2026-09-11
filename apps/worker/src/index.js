@@ -1,6 +1,6 @@
-import { close } from '@retainer/db';
-import { config } from '@retainer/chain';
-import { claimCharge, attemptCharge } from './charger.js';
+import { close, query } from '@retainer/db';
+import { config, publicClient } from '@retainer/chain';
+import { claimCharge, attemptCharge, claimFloor } from './charger.js';
 import { recoverOpenAttempts } from './recovery.js';
 import { indexEvents, confirmCharges } from './reconciler.js';
 import { indexIncomingTransfers } from './watcher.js';
@@ -70,7 +70,22 @@ async function tick() {
 async function main() {
   const cfg = config();
   log({ event: 'worker.start', chainId: cfg.chainId, router: cfg.router,
-        executor: cfg.executor, once: ONCE, crashInjection: CRASH, crashPre: CRASH_PRE, onlyCharge: ONLY });
+        executor: cfg.executor, once: ONCE, crashInjection: CRASH, crashPre: CRASH_PRE, onlyCharge: ONLY,
+        claimAboveChargeId: claimFloor().toString() });
+  // Where indexing resumes: the stored cursors, read before the first tick. A missing
+  // cursor would mean a fresh start a few thousand blocks back, never from genesis.
+  const [ix, wc] = await Promise.all([
+    query('SELECT last_indexed_block FROM indexer_state WHERE id = 1'),
+    query('SELECT name, last_indexed_block FROM watch_cursors ORDER BY name'),
+  ]);
+  log({ event: 'worker.cursors', permissionEvents: ix.rows[0]?.last_indexed_block ?? null,
+        watch: Object.fromEntries(wc.rows.map((r) => [r.name, r.last_indexed_block])) });
+  // Round trips from wherever this runs, logged once at start: the worker is query-heavy,
+  // so the distance to the database is worth knowing rather than guessing.
+  const ms = async (f, n) => { const t = []; for (let i = 0; i < n; i++) { const s = performance.now(); await f(); t.push(performance.now() - s); }
+    t.sort((a, b) => a - b); return { min: +t[0].toFixed(1), median: +t[n >> 1].toFixed(1), max: +t[n - 1].toFixed(1) }; };
+  log({ event: 'worker.latency', dbSelect1Ms: await ms(() => query('SELECT 1'), 10),
+        rpcBlockNumberMs: await ms(() => publicClient().getBlockNumber({ cacheTime: 0 }), 3) });
 
   if (ONCE) { await tick(); await close(); return; }
 

@@ -69,6 +69,16 @@ export function Shell({ ctx, reviewCount = 0, canWrite = false, children }:
         <div className="border-t border-neutral-100 px-4 py-1.5 font-mono text-[11px] text-neutral-500 lg:hidden dark:border-white/5 dark:text-neutral-400">
           chain {ctx.chainId} · head {ctx.head ?? "unavailable"}{ctx.indexer?.lag && <> · {ctx.indexer.lag} behind</>} · {fmt(ctx.fetchedAt)}
         </div>
+        {/* gas tank: shown only when it needs a person. An empty tank stops charging and registration silently. */}
+        {ctx.gasTank && ctx.gasTank.level !== "ok" && (
+          <div role="alert" className={`border-t px-4 py-2 text-xs md:px-6 ${ctx.gasTank.level === "CRITICAL"
+            ? "border-red-200 bg-red-50 text-red-800 dark:border-red-500/30 dark:bg-red-950/60 dark:text-red-200"
+            : "border-amber-200 bg-amber-50 text-amber-900 dark:border-amber-500/30 dark:bg-amber-950/60 dark:text-amber-200"}`}>
+            <b>Executor gas {ctx.gasTank.level === "CRITICAL" ? "critical" : "low"}:</b> {ctx.gasTank.balanceEth} ETH, about{" "}
+            {ctx.gasTank.estimatedChargesRemaining.toLocaleString()} charges or {ctx.gasTank.estimatedRegistrationsRemaining.toLocaleString()} registrations left.
+            {" "}New registrations are closed until it is refilled{ctx.gasTank.level === "CRITICAL" ? ", and the worker has stopped starting charges" : ""}.
+          </div>
+        )}
       </header>
 
       <div className="flex flex-1">

@@ -3,7 +3,7 @@ import {
   classify, config, executorWallet, publicClient,
   spendRouterAbi, extractSelector, modeFromSelector, selectorName, toStruct, periodFor,
 } from '@retainer/chain';
-import { tx, audit } from '@retainer/db';
+import { tx, audit, query } from '@retainer/db';
 import { emit } from './events.js';
 import { allocateNonce } from './nonce.js';
 
@@ -40,6 +40,34 @@ export function dispositionFor(mode, retryAt, attempts) {
 }
 
 /** Claim one due charge. FOR UPDATE SKIP LOCKED so workers never collide. */
+/**
+ * Charges at or below this id are never claimed, by the scheduler or by --charge.
+ *
+ * The first twelve charges are the Phase 1 evidence cited on the landing page, in the docs
+ * and in the README. Several were left deliberately in failed_deferred / failed_retryable
+ * states to demonstrate failure modes. A worker that runs continuously would otherwise retry
+ * them on its first tick -- one could now succeed -- rewriting evidence that must stay exactly
+ * as cited. The live deployment sets RETAINER_CLAIM_ABOVE_CHARGE_ID=12. Unset, nothing is
+ * excluded, which is what every drill and local run did before the worker went live.
+ */
+export function claimFloor() {
+  return BigInt(process.env.RETAINER_CLAIM_ABOVE_CHARGE_ID ?? '0');
+}
+
+/** The one definition of "claimable", shared by claimCharge and the read-only preview. */
+const CLAIMABLE = `ch.state IN ('pending','failed_retryable','failed_deferred')
+         AND ($1::bigint IS NULL OR ch.id = $1::bigint)
+         AND ($1::bigint IS NOT NULL OR ch.next_attempt_at <= now())
+         AND ch.id > $2::bigint`;
+
+/** Read-only: the charges claimCharge would pick up now, in order, without locking or claiming. */
+export async function previewClaimable({ floor = claimFloor(), onlyChargeId = null } = {}) {
+  const { rows } = await query(
+    `SELECT ch.id FROM charges ch WHERE ${CLAIMABLE} ORDER BY ch.next_attempt_at`,
+    [onlyChargeId, floor.toString()]);
+  return rows.map((r) => String(r.id));
+}
+
 export async function claimCharge(onlyChargeId = null) {
   return tx(async (c) => {
     const { rows } = await c.query(`
@@ -48,12 +76,10 @@ export async function claimCharge(onlyChargeId = null) {
              p.executor, p.recipient
         FROM charges ch
         JOIN permissions p ON p.id = ch.permission_id
-       WHERE ch.state IN ('pending','failed_retryable','failed_deferred')
-         AND ($1::bigint IS NULL OR ch.id = $1::bigint)
-         AND ($1::bigint IS NOT NULL OR ch.next_attempt_at <= now())
+       WHERE ${CLAIMABLE}
        ORDER BY ch.next_attempt_at
          FOR UPDATE OF ch SKIP LOCKED
-       LIMIT 1`, [onlyChargeId]);
+       LIMIT 1`, [onlyChargeId, claimFloor().toString()]);
     if (!rows.length) return null;
     const row = rows[0];
     await c.query(`UPDATE charges SET state='in_flight', attempts = attempts + 1, updated_at = now()

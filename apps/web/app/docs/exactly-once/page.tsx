@@ -20,7 +20,7 @@ export default function ExactlyOnce() {
         Because the transaction is signed locally, its hash is known before it is sent. That hash, the nonce, and the raw bytes are committed
         first. If the process dies afterwards — at any point — recovery has everything it needs to find out what happened, and can
         re-broadcast the <i>identical</i> bytes rather than signing again. Same nonce, same hash, so at most one can ever be mined.
-        <Cite file="apps/worker/src/charger.js" line={107} />
+        <Cite file="apps/worker/src/charger.js" line={133} />
       </P>
 
       <H2 id="nonces">Nonces</H2>

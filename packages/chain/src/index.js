@@ -4,3 +4,4 @@ export * from './permission.js';
 export * from './client.js';
 export * from './classify.js';
 export * from './smart-account.js';
+export * from './gastank.js';

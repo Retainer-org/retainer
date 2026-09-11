@@ -4,7 +4,7 @@ import { createWalletClient, http, getAddress, hexToBigInt, isHex, isAddress, si
 import { privateKeyToAccount } from 'viem/accounts';
 import { baseSepolia } from 'viem/chains';
 import { spendPermissionManagerAbi, toStruct, config, publicClient,
-  deriveSmartAccount, smartWalletTypedData, registrationSignature, checkOwner } from '@retainer/chain';
+  deriveSmartAccount, smartWalletTypedData, registrationSignature, checkOwner, readGasTank } from '@retainer/chain';
 import { query } from '@retainer/db';
 import { storePermission } from '../../../../cli/src/store.js';
 import { policy, publicPolicy, checkPolicy, ipHashFrom } from './policy.js';
@@ -22,7 +22,14 @@ export const dynamic = 'force-dynamic';
  */
 export async function GET(req) {
   const signer = new URL(req.url).searchParams.get('signer');
-  if (!signer) return NextResponse.json(publicPolicy());
+  if (!signer) {
+    const pol = publicPolicy();
+    // Registration also closes when the executor's gas is low, so no one signs into a refusal.
+    const tank = pol.registrationEnabled ? await readGasTank(publicClient(), config().executor).catch(() => null) : null;
+    const gasLow = Boolean(tank && !tank.registrationOpen);
+    return NextResponse.json({ ...pol, registrationEnabled: pol.registrationEnabled && !gasLow,
+      registrationClosedReason: !pol.registrationEnabled ? 'no_executor_key' : gasLow ? 'gas_tank_low' : null });
+  }
   if (!isAddress(signer)) return NextResponse.json({ code: 'bad_request', error: 'signer is not an address' }, { status: 400 });
   const { rows } = await query(
     `SELECT id, permission_hash, account, spender, token, allowance, period_seconds, start_ts, end_ts, salt, extra_data,
@@ -65,6 +72,13 @@ export async function POST(req) {
   const pol = policy();
   const pub = publicClient();
   const now = Math.floor(Date.now() / 1000);
+
+  // Registrations must never spend gas that charges already owed will need.
+  const tank = await readGasTank(pub, pol.executor).catch(() => null);
+  if (tank && !tank.registrationOpen) {
+    return refuse(503, 'gas_tank_low',
+      'Registration is paused: the executor that pays for it is low on gas. Nothing was signed on-chain; please try again later.');
+  }
 
   let body;
   try { body = await req.json(); } catch { return refuse(400, 'bad_request', 'body is not JSON'); }

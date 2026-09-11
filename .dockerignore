@@ -1,0 +1,16 @@
+# Allow-list: the worker image needs manifests and the worker's own source only.
+*
+!package.json
+# railway.json must pass this filter: with it excluded, Railway's first deploy ignored the Dockerfile builder.
+!railway.json
+!package-lock.json
+!packages/chain/package.json
+!packages/chain/src
+!packages/db/package.json
+!packages/db/src
+!packages/db/migrations
+!apps/worker
+!apps/web/package.json
+!apps/cli/package.json
+**/node_modules
+**/.env*

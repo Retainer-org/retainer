@@ -38,6 +38,7 @@ type Policy = {
   chainId: number; manager: Hex; router: Hex; usdc: Hex; executor: Hex; treasury: Hex; factory: Hex; extraData: Hex;
   allowance: string; periodSeconds: number; periodInDays: number; durationSeconds: number;
   registrationEnabled?: boolean;
+  registrationClosedReason?: "no_executor_key" | "gas_tank_low" | null;
 };
 type Struct = ReturnType<typeof toStruct>;
 type Existing = { id: string; permissionHash: Hex; approveTx: Hex | null; revokedAt: string | null; revokeTx: Hex | null; permission: any };
@@ -384,7 +385,13 @@ export function SignFlow() {
 
   return (
     <div className="space-y-5">
-      {pol.registrationEnabled === false && (
+      {pol.registrationEnabled === false && pol.registrationClosedReason === "gas_tank_low" && (
+        <p className="rounded-lg bg-amber-500/10 p-3 text-sm leading-6 text-neutral-800 ring-1 ring-amber-500/40 dark:text-neutral-200">
+          <b>Registration is paused.</b> The executor that pays the gas for registering is running low, so the sign button stays off
+          until it is refilled. You can still read the terms, check your account, and revoke a permission you already have.
+        </p>
+      )}
+      {pol.registrationEnabled === false && pol.registrationClosedReason !== "gas_tank_low" && (
         <p className="rounded-lg bg-amber-500/10 p-3 text-sm leading-6 text-neutral-800 ring-1 ring-amber-500/40 dark:text-neutral-200">
           <b>Signing is not switched on for this deployment yet.</b> You can read the terms and check your account, but registering a
           permission needs Retainer&apos;s executor, which this deployment does not run — so the sign button stays off and nothing is submitted.

@@ -95,7 +95,7 @@ export default function ExpectedPayments() {
       <UL>
         <li>The dashboard&apos;s <Link href="/dashboard/expected" className="text-brand-primary hover:underline">expected payments</Link> page lists every obligation with its outstanding balance and how it is meant to be satisfied. <Cite file="apps/web/app/dashboard/expected/page.tsx" line={15} /></li>
         <li>Evidence is a link to the confirming transaction for a pull, or the count of matched transfers for a watch. <Cite file="apps/web/app/dashboard/expected/page.tsx" line={74} /></li>
-        <li>The loader is database-only: nothing on that page is fetched from the chain at render time. <Cite file="apps/web/lib/dashboard-data.ts" line={241} /></li>
+        <li>The loader is database-only: nothing on that page is fetched from the chain at render time. <Cite file="apps/web/lib/dashboard-data.ts" line={250} /></li>
       </UL>
     </>
   );

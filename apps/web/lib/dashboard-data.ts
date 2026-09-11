@@ -1,7 +1,7 @@
 import "server-only";
 import type { Abi } from "viem";
 import { query } from "@retainer/db";
-import { publicClient, config, spendPermissionManagerAbi, toStruct } from "@retainer/chain";
+import { publicClient, config, spendPermissionManagerAbi, toStruct, readGasTank } from "@retainer/chain";
 
 /**
  * Data layer for the merchant dashboard. Nothing here is mocked, seeded or
@@ -55,6 +55,9 @@ export type Context = {
   /** null when the RPC could not be reached -- see loadContext. */
   head: string | null;
   indexer: { lastIndexedBlock: string; updatedAt: string; lag: string | null } | null;
+  /** The executor's gas, in charges and registrations left; null when the RPC could not be reached. */
+  gasTank: { level: string; registrationOpen: boolean; balanceEth: string;
+             estimatedChargesRemaining: number; estimatedRegistrationsRemaining: number } | null;
 };
 
 export type Snapshot = Context & { permissions: PermissionRow[]; charges: ChargeRow[] };
@@ -75,13 +78,14 @@ const iso = (v: unknown): string | null =>
  */
 export async function loadContext(): Promise<Context> {
   const cfg = config();
-  const [ix, head] = await Promise.all([
+  const [ix, head, gasTank] = await Promise.all([
     rows(`SELECT last_indexed_block, updated_at FROM indexer_state WHERE id = 1`),
     publicClient().getBlockNumber().catch(() => null),
+    readGasTank(publicClient(), cfg.executor).catch(() => null),
   ]);
   const i = ix[0];
   return {
-    fetchedAt: new Date().toISOString(), chainId: cfg.chainId, head: head === null ? null : head.toString(),
+    fetchedAt: new Date().toISOString(), chainId: cfg.chainId, head: head === null ? null : head.toString(), gasTank,
     indexer: i
       ? {
           lastIndexedBlock: String(i.last_indexed_block), updatedAt: iso(i.updated_at)!,

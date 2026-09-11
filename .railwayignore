@@ -1,0 +1,12 @@
+# `railway up` uploads this directory. Keep it to what the worker image is built from;
+# .gitignore already excludes .env, node_modules, build output and contracts/lib.
+.env*
+node_modules/
+contracts/
+scripts/
+apps/web/*
+!apps/web/package.json
+apps/cli/*
+!apps/cli/package.json
+docs/
+*.png
