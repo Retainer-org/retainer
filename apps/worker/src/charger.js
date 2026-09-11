@@ -6,6 +6,7 @@ import {
 import { tx, audit, query } from '@retainer/db';
 import { emit } from './events.js';
 import { allocateNonce } from './nonce.js';
+import { assertLease } from './lease.js';
 
 /** How a failure mode maps onto charge state and when (if ever) to try again. */
 export function dispositionFor(mode, retryAt, attempts) {
@@ -70,6 +71,7 @@ export async function previewClaimable({ floor = claimFloor(), onlyChargeId = nu
 
 export async function claimCharge(onlyChargeId = null) {
   return tx(async (c) => {
+    await assertLease(c);   // only the lease holder may claim
     const { rows } = await c.query(`
       SELECT ch.*, p.permission_hash, p.account, p.spender, p.token, p.allowance,
              p.period_seconds, p.start_ts, p.end_ts, p.salt, p.extra_data,
@@ -194,6 +196,7 @@ export async function attemptCharge(row, { crashAfterBroadcast = false, crashBef
 
   // --- sign, persist, COMMIT -------------------------------------------------
   const { attemptId, rawTx, txHash, nonce } = await tx(async (c) => {
+    await assertLease(c);   // a worker that lost the lease must not create an attempt
     const nonce = await allocateNonce(c, permission.executor);
     const rawTx = await wallet.signTransaction({
       to: getAddress(cfg.router), data, nonce, gas,

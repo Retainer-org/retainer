@@ -25,6 +25,7 @@ import { publicClient, config, toStruct, periodFor, classify, deriveSmartAccount
 import { query, close } from '@retainer/db';
 import { claimCharge, attemptCharge } from '../apps/worker/src/charger.js';
 import { recoverOpenAttempts } from '../apps/worker/src/recovery.js';
+import { acquireLease, releaseLease, leaseHolder, newHolderId, WORKER_LEASE } from '../apps/worker/src/lease.js';
 import { indexEvents, confirmCharges } from '../apps/worker/src/reconciler.js';
 import { indexIncomingTransfers } from '../apps/worker/src/watcher.js';
 import { settleFromConfirmedCharges } from '../apps/worker/src/sweep.js';
@@ -214,6 +215,14 @@ try {
   // Exactly the worker's tick order: recover anything in flight, index, confirm, then new work.
   // (A charge whose attempt was superseded goes back to the queue and is attempted again.)
   let state = null, attempts = 0;
+  // Charging takes the one worker lease, exactly as the worker does: the drill must never charge
+  // alongside a running worker. If one holds it, stop the worker (or use a separate database).
+  const drillHolder = newHolderId();
+  if (!(await acquireLease(WORKER_LEASE, drillHolder))) {
+    throw new Error(`a worker holds the lease (${await leaseHolder(WORKER_LEASE)}); the drill will not charge alongside it`);
+  }
+  const renew = setInterval(() => acquireLease(WORKER_LEASE, drillHolder).catch(() => {}), 10_000);
+  try {
   for (let i = 0; i < 60; i++) {
     await recoverOpenAttempts(); await indexEvents(); await confirmCharges();
     state = (await query('SELECT state::text s FROM charges WHERE id = $1', [chargeId])).rows[0].s;
@@ -224,6 +233,7 @@ try {
     }
     await sleep(3000);
   }
+  } finally { clearInterval(renew); await releaseLease(WORKER_LEASE, drillHolder); }
   ev.charge = (await query('SELECT confirmed_tx_hash FROM charges WHERE id = $1', [chargeId])).rows[0]?.confirmed_tx_hash;
   check('the charge is confirmed — by the reconciler, from both on-chain events', state === 'confirmed', `${state}, ${attempts} attempt(s)`);
   const chargeR = ev.charge ? await pub.waitForTransactionReceipt({ hash: ev.charge }) : null;

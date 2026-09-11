@@ -1,6 +1,7 @@
 import { close, query } from '@retainer/db';
 import { config, publicClient } from '@retainer/chain';
 import { claimCharge, attemptCharge, claimFloor } from './charger.js';
+import { acquireLease, releaseLease, leaseHolder, heldLease, newHolderId, WORKER_LEASE } from './lease.js';
 import { recoverOpenAttempts } from './recovery.js';
 import { indexEvents, confirmCharges } from './reconciler.js';
 import { indexIncomingTransfers } from './watcher.js';
@@ -87,17 +88,46 @@ async function main() {
   log({ event: 'worker.latency', dbSelect1Ms: await ms(() => query('SELECT 1'), 10),
         rpcBlockNumberMs: await ms(() => publicClient().getBlockNumber({ cacheTime: 0 }), 3) });
 
-  if (ONCE) { await tick(); await close(); return; }
+  // One worker at a time (lease.js). Nothing below runs without the lease.
+  const HOLDER = newHolderId();
+  if (ONCE) {
+    if (!(await acquireLease(WORKER_LEASE, HOLDER))) {
+      log({ event: 'lease.busy', holder: await leaseHolder(WORKER_LEASE), note: 'another worker is running; --once did nothing' });
+      await close(); process.exitCode = 3; return;
+    }
+    try { await tick(); } finally { await releaseLease(WORKER_LEASE, HOLDER); await close(); }
+    return;
+  }
 
   let stopping = false;
   for (const sig of ['SIGINT', 'SIGTERM']) {
     process.on(sig, () => { log({ event: 'worker.stopping', sig }); stopping = true; });
   }
+  // Heartbeat: renew well inside the TTL. Losing the lease, or letting it lapse, stops the process.
+  setInterval(async () => {
+    const held = heldLease(); if (!held) return;
+    try {
+      if (!(await acquireLease(WORKER_LEASE, HOLDER))) { log({ event: 'lease.lost', holder: HOLDER, now: await leaseHolder(WORKER_LEASE) }); process.exit(75); }
+    } catch (e) {
+      if (held.expiresAt < new Date()) { log({ event: 'lease.lapsed', holder: HOLDER, error: String(e?.message ?? e) }); process.exit(75); }
+    }
+  }, 10_000).unref();
+
+  let waiting = false, announced = false;
   while (!stopping) {
+    const have = await acquireLease(WORKER_LEASE, HOLDER).catch(() => false);
+    if (!have) {
+      if (!waiting) log({ event: 'lease.waiting', holder: HOLDER, heldBy: await leaseHolder(WORKER_LEASE).catch(() => null) });
+      waiting = true;
+      await new Promise(r => setTimeout(r, 2000));
+      continue;
+    }
+    if (!announced) { log({ event: 'lease.acquired', holder: HOLDER, afterWaiting: waiting }); announced = true; waiting = false; }
     try { await tick(); }
     catch (e) { log({ event: 'tick.error', error: String(e?.stack ?? e) }); }
     await new Promise(r => setTimeout(r, POLL_MS));
   }
+  if (heldLease()) { await releaseLease(WORKER_LEASE, HOLDER); log({ event: 'lease.released', holder: HOLDER }); }
   await close();
 }
 
