@@ -6,7 +6,8 @@
     "dev": "next dev -p 3017",
     "build": "next build",
     "start": "next start -p 3017",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "prebuild": "node ../../scripts/build-docs-index.mjs"
   },
   "dependencies": {
     "@base-org/account": "^2.5.10",

@@ -35,10 +35,6 @@ export default function Hero() {
                 className="inline-flex items-center rounded-md bg-white px-6 py-3 text-base font-medium text-neutral-700 ring-1 ring-neutral-200 transition-colors hover:bg-neutral-50 dark:bg-neutral-800 dark:text-neutral-200 dark:ring-neutral-700 dark:hover:bg-neutral-700">
                 Verified contract
               </Link>
-              <Link href="/#evidence"
-                className="inline-flex items-center rounded-md bg-white px-6 py-3 text-base font-medium text-neutral-700 ring-1 ring-neutral-200 transition-colors hover:bg-neutral-50 dark:bg-neutral-800 dark:text-neutral-200 dark:ring-neutral-700 dark:hover:bg-neutral-700">
-                See the evidence
-              </Link>
             </div>
           </div>
 

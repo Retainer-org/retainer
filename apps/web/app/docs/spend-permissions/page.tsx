@@ -34,7 +34,7 @@ export default function SpendPermissions() {
         ["Enforced on-chain", <>All of the above is contract logic. Retainer holds a key that can <i>ask</i>; the manager decides.</>, <Cite file="contracts/src/SpendPermissionManager.sol" line={420} label="spend" />],
       ]} />
 
-      <H3>How the reset actually works</H3>
+      <H3 id="reset">How the reset actually works</H3>
       <P>
         From Coinbase&apos;s own accounting note, at the commit Retainer vendors: <i>&ldquo;As apps spend user assets, the recurring logic
         automatically increments and enforces the allowance for the current period. Once enough time passes to enter the next period, the

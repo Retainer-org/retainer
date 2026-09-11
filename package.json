@@ -15,7 +15,7 @@
     "migrate": "node --env-file=.env packages/db/src/migrate.js",
     "worker": "node --env-file=.env apps/worker/src/index.js",
     "cli": "node --env-file=.env apps/cli/src/index.js",
-    "check": "npm run check:docs && npm run check:txs && npm run check:sources && npm run check:degradation",
+    "check": "npm run check:docs && npm run check:docs-index && npm run check:txs && npm run check:sources && npm run check:degradation",
     "check:docs": "node scripts/check-doc-citations.mjs",
     "check:txs": "node --env-file=.env scripts/check-cited-transactions.mjs",
     "check:sources": "node scripts/check-dashboard-sources.mjs",
@@ -26,7 +26,9 @@
     "drill:dashboard": "node --env-file=.env scripts/phase2-dashboard-drills.mjs",
     "drill:metamask": "node --env-file=.env scripts/phase3-drills.mjs",
     "prune:drills": "node --env-file=.env scripts/prune-drill-data.mjs",
-    "session:report": "node --env-file=.env scripts/session-report.mjs"
+    "session:report": "node --env-file=.env scripts/session-report.mjs",
+    "check:docs-index": "node scripts/build-docs-index.mjs --check",
+    "docs:index": "node scripts/build-docs-index.mjs"
   },
   "devDependencies": {
     "shadcn": "^4.21.0"

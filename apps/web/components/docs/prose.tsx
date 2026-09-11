@@ -12,10 +12,10 @@ export const H1 = ({ children, lede }: { children: ReactNode; lede?: ReactNode }
   </header>
 );
 export const H2 = ({ id, children }: { id?: string; children: ReactNode }) => (
-  <h2 id={id} className="mt-12 mb-3 scroll-mt-20 text-xl font-semibold text-neutral-900 dark:text-white">{children}</h2>
+  <h2 id={id} className="mt-12 mb-3 scroll-mt-28 text-xl font-semibold text-neutral-900 dark:text-white">{children}</h2>
 );
-export const H3 = ({ children }: { children: ReactNode }) => (
-  <h3 className="mt-8 mb-2 text-base font-semibold text-neutral-900 dark:text-white">{children}</h3>
+export const H3 = ({ id, children }: { id?: string; children: ReactNode }) => (
+  <h3 id={id} className="mt-8 mb-2 scroll-mt-28 text-base font-semibold text-neutral-900 dark:text-white">{children}</h3>
 );
 export const P = ({ children }: { children: ReactNode }) => (
   <p className="my-4 text-[15px] leading-7 text-neutral-700 dark:text-neutral-300">{children}</p>

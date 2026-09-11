@@ -1,0 +1,44 @@
+{
+  "$comment": "The docs table of contents: sections, and the pages in each, in reading order. It drives the sidebar, previous/next, and the page titles in search. To add a page: create its page.tsx using the prose components, give every heading an id, and add one line here. `npm run check:docs-index` fails if a page exists that is not listed, or a listed page does not exist.",
+  "sections": [
+    {
+      "title": "Welcome",
+      "pages": [
+        { "href": "/docs", "title": "What Retainer is", "file": "apps/web/app/docs/page.tsx" },
+        { "href": "/docs/limitations", "title": "Current limitations", "file": "apps/web/app/docs/limitations/page.tsx" }
+      ]
+    },
+    {
+      "title": "Customers",
+      "pages": [
+        { "href": "/docs/spend-permissions", "title": "Spend permissions", "file": "apps/web/app/docs/spend-permissions/page.tsx" },
+        { "href": "/docs/wallets", "title": "Signing with any wallet", "file": "apps/web/app/docs/wallets/page.tsx" }
+      ]
+    },
+    {
+      "title": "Charging",
+      "pages": [
+        { "href": "/docs/charge-lifecycle", "title": "The charge lifecycle", "file": "apps/web/app/docs/charge-lifecycle/page.tsx" },
+        { "href": "/docs/failure-modes", "title": "The six failure modes", "file": "apps/web/app/docs/failure-modes/page.tsx" },
+        { "href": "/docs/exactly-once", "title": "Exactly-once charging", "file": "apps/web/app/docs/exactly-once/page.tsx" }
+      ]
+    },
+    {
+      "title": "Payments & matching",
+      "pages": [
+        { "href": "/docs/expected-payments", "title": "Expected payments", "file": "apps/web/app/docs/expected-payments/page.tsx" },
+        { "href": "/docs/watch-mode", "title": "Watch mode", "file": "apps/web/app/docs/watch-mode/page.tsx" },
+        { "href": "/docs/matching", "title": "The matching engine", "file": "apps/web/app/docs/matching/page.tsx" },
+        { "href": "/docs/review-queue", "title": "The review queue", "file": "apps/web/app/docs/review-queue/page.tsx" },
+        { "href": "/docs/alerts", "title": "Overdue detection and alerts", "file": "apps/web/app/docs/alerts/page.tsx" }
+      ]
+    },
+    {
+      "title": "Security & contracts",
+      "pages": [
+        { "href": "/docs/custody", "title": "Custody model", "file": "apps/web/app/docs/custody/page.tsx" },
+        { "href": "/docs/contracts", "title": "Contracts and addresses", "file": "apps/web/app/docs/contracts/page.tsx" }
+      ]
+    }
+  ]
+}

@@ -46,7 +46,6 @@ export function Evidence() {
         </Subheading>
         <div className="mt-6 flex flex-wrap gap-3">
           <Link href="https://github.com/Retainer-org/retainer" target="_blank" rel="noopener noreferrer" className="rounded-md bg-neutral-900 px-5 py-2.5 text-sm font-medium text-white hover:bg-neutral-700 dark:bg-white dark:text-black dark:hover:bg-neutral-200">Source on GitHub</Link>
-          <Link href="/try" className="rounded-md bg-white px-5 py-2.5 text-sm font-medium text-neutral-700 ring-1 ring-neutral-200 hover:bg-neutral-50 dark:bg-neutral-800 dark:text-neutral-200 dark:ring-neutral-700 dark:hover:bg-neutral-700">Try it: authorise a test payment</Link>
         </div>
       </div>
 
