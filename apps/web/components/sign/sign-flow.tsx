@@ -38,8 +38,16 @@ type Policy = {
   allowance: string; periodSeconds: number; periodInDays: number; durationSeconds: number;
   registrationEnabled?: boolean;
   registrationClosedReason?: "no_executor_key" | "gas_tank_low" | null;
+  fixedStart?: number | null;
 };
 type Struct = ReturnType<typeof toStruct>;
+
+/** A billing link, as /pay/<token> passes it in. Its terms are shown here; registration re-derives them from the row. */
+export type LinkView = {
+  token: string; merchantName: string; treasury: Hex; allowance: string; periodSeconds: number; durationSeconds: number;
+  startAt: number | null; firstCharge: "at_signup" | "end_of_first_period" | "none"; firstChargeAmount: string | null;
+  expiresAt: string; singleUse: boolean;
+};
 
 /** Accounts that registered in this browser session, so a different account can be called out. */
 type SessionReg = { eoa: string; permissionId: string };
@@ -53,7 +61,7 @@ const randomSalt = () => {
 };
 
 /* ======================================================================= */
-export function SignFlow() {
+export function SignFlow({ link }: { link?: LinkView } = {}) {
   const [pol, setPol] = useState<Policy | null>(null);
   const wallets = useInjectedWallets();
   const [provider, setProvider] = useState<Eip1193 | null>(null);
@@ -76,7 +84,12 @@ export function SignFlow() {
   useEffect(() => { setSessionRegs(readSession()); }, []);
   const baseSdk = useRef<any>(null);
 
-  useEffect(() => { fetch("/api/permissions").then((r) => r.json()).then(setPol).catch(() => setErr("Could not load the terms this deployment offers.")); }, []);
+  // A link's terms come from the link; the operator page's from configuration. Either way registration pins them server-side.
+  useEffect(() => {
+    fetch(link ? `/api/links/${link.token}` : "/api/permissions").then((r) => r.json())
+      .then((j) => { const p = link ? j.policy : j; if (p) setPol(p); else setErr("This link can no longer be used. Reload the page to see why."); })
+      .catch(() => setErr("Could not load the terms."));
+  }, [link]);
 
   const allowance = pol ? BigInt(pol.allowance) : 0n;
   const wc = useMemo(() => (provider && eoa ? createWalletClient({ account: eoa, chain: baseSepolia, transport: custom(provider) }) : null), [provider, eoa]);
@@ -114,7 +127,7 @@ export function SignFlow() {
       setDeployed(!!code && code !== "0x");
 
       // The exact struct that will be hashed, signed and submitted. Everything on screen reads from it.
-      const start = Math.floor(Date.now() / 1000);
+      const start = pol.fixedStart ?? Math.floor(Date.now() / 1000);
       const s = toStruct({ account: acct, spender: pol.router, token: pol.usdc, allowance: pol.allowance,
         period: pol.periodSeconds, start, end: start + pol.durationSeconds, salt: randomSalt(), extraData: pol.extraData });
       setStruct(s);
@@ -222,7 +235,7 @@ export function SignFlow() {
       setBusy("Registering on Base Sepolia — Retainer pays the gas…");
       const res = await fetch("/api/permissions", {
         method: "POST", headers: { "content-type": "application/json" },
-        body: JSON.stringify({ path: "eoa_owned", signerEoa: eoa, signature, permissionHash: hash.onchain,
+        body: JSON.stringify({ path: "eoa_owned", signerEoa: eoa, signature, permissionHash: hash.onchain, ...(link ? { link: link.token } : {}),
           permission: { ...struct, allowance: struct.allowance.toString(), salt: struct.salt.toString() } }),
       });
       const body = await res.json();
@@ -252,7 +265,7 @@ export function SignFlow() {
       });
       setBusy("Registering on Base Sepolia — Retainer pays the gas…");
       const res = await fetch("/api/permissions", { method: "POST", headers: { "content-type": "application/json" },
-        body: JSON.stringify({ path: "base_account", permission: sp.permission, signature: sp.signature, permissionHash: sp.permissionHash },
+        body: JSON.stringify({ path: "base_account", permission: sp.permission, signature: sp.signature, permissionHash: sp.permissionHash, ...(link ? { link: link.token } : {}) },
           (_k, v) => (typeof v === "bigint" ? v.toString() : v)) });
       const body = await res.json();
       if (!res.ok) throw new Error(body.error ?? "registration failed");
@@ -269,7 +282,12 @@ export function SignFlow() {
   /* ---------------------------------------------------------------- gating */
   const hashOk = !!hash && hash.local.toLowerCase() === hash.onchain.toLowerCase();
   const funded = balance !== null && balance >= allowance;
-  const canSign = pol?.registrationEnabled !== false && !!struct && hashOk && owner?.accepted === true && chainOk === true && (funded || ackUnfunded) && !busy && !result;
+  // A first charge taken at signup needs the money there first -- no "I'll fund it later" (the server enforces this too).
+  const firstAtSignup = link?.firstCharge === "at_signup";
+  const firstAmt = link?.firstChargeAmount ? BigInt(link.firstChargeAmount) : 0n;
+  const fundedForFirst = balance !== null && balance >= firstAmt;
+  const fundingOk = firstAtSignup ? fundedForFirst : funded || ackUnfunded;
+  const canSign = pol?.registrationEnabled !== false && !!struct && hashOk && owner?.accepted === true && chainOk === true && fundingOk && !busy && !result;
 
   if (!pol) return <p className="text-sm text-neutral-500">{err ?? "Loading the terms…"}</p>;
   const otherSessionSigners = eoa ? sessionRegs.filter((r) => r.eoa.toLowerCase() !== eoa.toLowerCase()) : [];
@@ -281,6 +299,11 @@ export function SignFlow() {
   );
   const periodW = periodWords(pol.periodSeconds);
   const days = pol.durationSeconds / 86400;
+  const who = link?.merchantName;
+  const whenCharged = !link ? null
+    : link.firstCharge === "at_signup" ? <>The first <b>{usdc(firstAmt)} USDC</b> is taken as soon as you sign. After that, {who} decides when to bill — never more than {usdc(allowance)} USDC in any {periodW}.</>
+    : link.firstCharge === "end_of_first_period" ? <>The first <b>{usdc(firstAmt)} USDC</b> is taken at the end of your first {periodW}. After that, {who} decides when to bill — never more than {usdc(allowance)} USDC in any {periodW}.</>
+    : <>Nothing is taken when you sign. {who} decides when to bill — never more than {usdc(allowance)} USDC in any {periodW}.</>;
 
   return (
     <div className="space-y-5">
@@ -299,16 +322,27 @@ export function SignFlow() {
       {/* ------------------------------------------------ 1. the terms, first */}
       <Step n={1} title="What you are agreeing to">
         <p className="text-base leading-7 text-neutral-900 dark:text-white">
-          Retainer can collect <b>at most {usdc(allowance)} USDC in any {periodW}</b> from your account, for {days} days.
+          {who ? <b>{who}</b> : "Retainer"} can collect <b>at most {usdc(allowance)} USDC in any {periodW}</b> from your account, for {days} days.
           It cannot take more, and unused allowance does not carry over to the next {periodW}.
         </p>
+        {whenCharged && (
+          <div className="mt-3 rounded-xl bg-neutral-50 p-3 text-sm leading-6 text-neutral-800 dark:bg-neutral-800/60 dark:text-neutral-200" data-when-charged>
+            <div className="text-xs font-medium uppercase tracking-wide text-neutral-500 dark:text-neutral-400">When you are charged</div>
+            <p className="mt-1">{whenCharged}</p>
+          </div>
+        )}
         <div className="mt-4">
           <Row k="Token">USDC · <Link2 href={scan("address", pol.usdc)}>{short(pol.usdc)}</Link2> on Base Sepolia</Row>
           <Row k="Exact cap">{usdc(allowance, 6)} USDC ({allowance.toString()} base units) per {periodW}</Row>
           <Row k="Starts">{struct ? when(struct.start) : "when you sign"}</Row>
           <Row k="Expires">{struct ? when(struct.end) : `${days} days after you sign`} — after that it can never be used again</Row>
           <Row k="Collected by">Retainer&apos;s SpendRouter <Link2 href={`${scan("address", pol.router)}#code`}>{short(pol.router)}</Link2> (verified source), which forwards the full amount in the same transaction and keeps none of it</Row>
-          <Row k="Paid to">Merchant treasury <Link2 href={scan("address", pol.treasury)}>{short(pol.treasury)}</Link2></Row>
+          <Row k="Paid to">
+            {link
+              ? <><Link2 href={scan("address", pol.treasury)}>{short(pol.treasury)}</Link2> — &ldquo;{who}&rdquo; is the name on this link, not a verified identity. This address is where the money goes.</>
+              : <>Merchant treasury <Link2 href={scan("address", pol.treasury)}>{short(pol.treasury)}</Link2></>}
+          </Row>
+          {link && <Row k="This link">Valid until {link.expiresAt.replace("T", " ").slice(0, 16)} UTC · {link.singleUse ? "can be used once" : "can be used by anyone who has it"}</Row>}
           <Row k="To stop it">Revoke at any time from <Link href="/account" className="text-brand-primary hover:underline">your permissions page</Link> by connecting the same wallet: one transaction from your wallet, which may ask for a small network fee. The merchant can also revoke it. Either way it is enforced by the contract, not by us.</Row>
         </div>
       </Step>
@@ -414,7 +448,12 @@ export function SignFlow() {
               </div>
             )}
             {fundTx && <p className="mt-2 text-xs">Transfer: <Link2 href={scan("tx", fundTx)}>{short(fundTx)}</Link2></p>}
-            {!funded && (
+            {firstAtSignup && (
+              <p className={`mt-3 text-sm ${fundedForFirst ? "text-emerald-700 dark:text-emerald-400" : "text-amber-800 dark:text-amber-300"}`}>
+                Your first charge of {usdc(firstAmt)} USDC is taken as soon as you sign, so this account must hold it first{fundedForFirst ? " — it does." : "."}
+              </p>
+            )}
+            {!funded && !firstAtSignup && (
               <label className="mt-3 flex items-start gap-2 text-xs text-neutral-600 dark:text-neutral-400">
                 <input type="checkbox" checked={ackUnfunded} onChange={(e) => setAckUnfunded(e.target.checked)} className="mt-0.5" />
                 I&apos;ll fund it after signing. Until I do, charges will fail and be retried automatically.
@@ -434,7 +473,8 @@ export function SignFlow() {
                 The fingerprint computed on this page equals the permission manager&apos;s own hash, read from the chain
                 {hash && !hashOk && <span className="block text-xs text-red-600 dark:text-red-400">They differ, so signing is blocked. Reload the page; if it persists, do not sign.</span>}
               </Check>
-              <Check ok={funded || ackUnfunded}>{funded ? "Your smart account is funded" : "You have acknowledged the account is not funded yet"}</Check>
+              <Check ok={fundingOk}>{firstAtSignup ? (fundedForFirst ? `Your smart account holds the first charge (${usdc(firstAmt)} USDC)` : `Your smart account must hold the first charge (${usdc(firstAmt)} USDC) before you sign`)
+                : funded ? "Your smart account is funded" : "You have acknowledged the account is not funded yet"}</Check>
               <Check ok={chainOk === true}>Your wallet is on Base Sepolia{switchBtn}</Check>
             </ul>
             {result ? (
@@ -457,7 +497,8 @@ export function SignFlow() {
         </p>
       )}
 
-      {result && (
+      {result && link && <FirstCharge result={result} merchant={who!} />}
+      {result && !link && (
         <Step n={5} title="Registered" done>
           <ul className="space-y-1.5 text-sm">
             <Check ok>Permission #{result.permissionId} is live on Base Sepolia</Check>
@@ -472,5 +513,69 @@ export function SignFlow() {
       )}
 
     </div>
+  );
+}
+
+/* ---------------------------------------------------------------- after signing, on a link */
+const FAILURE: Record<string, string> = {
+  INSUFFICIENT_BALANCE: "your smart account did not hold enough USDC", ALLOWANCE_EXHAUSTED: "this period's cap was already used",
+  REVOKED: "the permission was revoked", EXPIRED: "the permission had expired", NOT_STARTED: "the permission had not started yet",
+  NOT_APPROVED: "the permission was not registered on-chain", UNKNOWN: "an unexpected error",
+};
+
+/**
+ * The first charge of the permission just created, watched right here -- no sign-in, no trip to
+ * another page. It reads only through the receipt registration returned to this page, which names
+ * this one permission and nothing else; there is no way to ask it about any other.
+ */
+function FirstCharge({ result, merchant }: { result: any; merchant: string }) {
+  const [p, setP] = useState<any>(null);
+  const [err, setErr] = useState<string | null>(null);
+  const rule = result.firstCharge?.rule;
+  useEffect(() => {
+    if (!result.receipt || rule === "none") return;
+    let stop = false, t: ReturnType<typeof setTimeout>;
+    const tick = async () => {
+      try {
+        const r = await fetch(`/api/pay/progress?receipt=${encodeURIComponent(result.receipt)}`);
+        const j = await r.json();
+        if (!r.ok) { setErr(j.error ?? "Could not read the charge."); return; }
+        if (stop) return;
+        setP(j);
+        if (["confirmed", "failed_terminal"].includes(j.charge?.state) || rule === "end_of_first_period") return;
+      } catch { /* try again */ }
+      if (!stop) t = setTimeout(tick, 3000);
+    };
+    tick();
+    return () => { stop = true; clearTimeout(t); };
+  }, [result.receipt, rule]);
+
+  const ch = p?.charge;
+  const amount = result.firstCharge?.amount ? usdc(result.firstCharge.amount) : "";
+  const done = ch?.state === "confirmed";
+  return (
+    <Step n={5} title="Authorised" done>
+      <ul className="space-y-1.5 text-sm" data-first-charge={ch?.state ?? (rule === "none" ? "none" : "waiting")}>
+        <Check ok>Permission #{result.permissionId} is live{result.approveTx && <> — <Link2 href={scan("tx", result.approveTx)}>registration</Link2>{result.accountCreatedByThisTx ? ", which also created your smart account" : ""}</>}</Check>
+        {rule === "at_signup" && (<>
+          <Check ok={!!ch} pending={!ch}>First charge of {amount} USDC scheduled</Check>
+          <Check ok={!!ch?.sentTx} pending={!!ch && !ch.sentTx && !ch.failure}>Sent to Base Sepolia{ch?.sentTx && <> — <Link2 href={scan("tx", ch.sentTx)}>{short(ch.sentTx)}</Link2></>}</Check>
+          <Check ok={done} pending={!done && ch?.state !== "failed_terminal"}>
+            {done ? <>Confirmed — <b>{usdc(ch.settledAmount ?? ch.amount)} USDC</b> settled to {merchant} · <Link2 href={scan("tx", ch.confirmedTx)}>Basescan</Link2></> : "Confirmed on-chain"}
+          </Check>
+        </>)}
+        {rule === "end_of_first_period" && <Check ok pending={!ch}>First charge of {amount} USDC scheduled for {ch ? ch.dueAt.replace("T", " ").slice(0, 16) + " UTC" : "the end of your first period"}</Check>}
+        {rule === "none" && <Check ok>Nothing is taken now. {merchant} will bill you when a payment falls due, never more than your cap.</Check>}
+      </ul>
+      {ch?.failure && !done && (
+        <p className="mt-3 rounded-lg bg-amber-500/10 p-3 text-sm text-neutral-800 ring-1 ring-amber-500/40 dark:text-neutral-200">
+          Not taken yet: {FAILURE[ch.failure] ?? ch.failure.toLowerCase()}. {ch.state === "failed_terminal" ? "It will not be retried." : "It will be retried automatically."}
+        </p>
+      )}
+      {err && <p className="mt-3 text-xs text-neutral-500">{err}</p>}
+      <p className="mt-4 text-xs leading-5 text-neutral-500 dark:text-neutral-400">
+        To see charges later or cancel, come back to <Link href="/account" className="text-brand-primary hover:underline">your permissions page</Link> with this same wallet.
+      </p>
+    </Step>
   );
 }

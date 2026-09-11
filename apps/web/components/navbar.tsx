@@ -13,7 +13,7 @@ const links = [
   { title: "Evidence", href: "/#evidence" },
   { title: "Docs", href: "/docs" },
   { title: "Source", href: "https://github.com/Retainer-org/retainer", external: true },
-  { title: "Try it (testnet)", href: "/sign" },
+  { title: "Try it (testnet)", href: "/try" },
   { title: "Your permissions", href: "/account" },
 ];
 

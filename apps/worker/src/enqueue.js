@@ -15,8 +15,17 @@ import { periodFor } from '@retainer/chain';
  * Idempotent on (permission_id, period_start): enqueueing twice for one period
  * returns the existing charge and creates nothing.
  */
-export async function enqueuePullCharge({ permission: key, amount = null, source = 'fixed', now = Math.floor(Date.now() / 1000) }) {
-  return tx(async (c) => {
+export async function enqueuePullCharge(opts) {
+  return tx((c) => createPullCharge(c, opts));
+}
+
+/**
+ * The same, inside a transaction the caller owns. `dueAt` (unix seconds) sets when the worker may
+ * first attempt it; without it the charge is due now, exactly as before. A billing link uses this
+ * to create its first charge in the same transaction as the permission.
+ */
+export async function createPullCharge(c, { permission: key, amount = null, source = 'fixed', now = Math.floor(Date.now() / 1000), dueAt = null, actor = 'operator' }) {
+  {
     const p = (await c.query('SELECT * FROM permissions WHERE id::text = $1 OR permission_hash = $1', [String(key)])).rows[0];
     if (!p) throw new Error('permission not found');
 
@@ -78,15 +87,15 @@ export async function enqueuePullCharge({ permission: key, amount = null, source
       [customerId, owed, p.token, p.chain_id, per.periodEnd.toString(), p.id, `enqueue:permission:${p.id}:${per.periodStart}`])).rows[0].id;
 
     const ch = (await c.query(
-      `INSERT INTO charges (permission_id, period_start, period_end, amount, amount_source, expected_payment_id)
-       VALUES ($1, $2, $3, $4, $5, $6) RETURNING id, state::text AS state`,
-      [p.id, per.periodStart.toString(), per.periodEnd.toString(), chargeAmount, source, ep])).rows[0];
+      `INSERT INTO charges (permission_id, period_start, period_end, amount, amount_source, expected_payment_id, next_attempt_at)
+       VALUES ($1, $2, $3, $4, $5, $6, COALESCE(to_timestamp($7), now())) RETURNING id, state::text AS state`,
+      [p.id, per.periodStart.toString(), per.periodEnd.toString(), chargeAmount, source, ep, dueAt])).rows[0];
 
-    await audit(c, { actor: 'operator', event: 'charge.enqueued', permissionId: p.id, chargeId: ch.id,
+    await audit(c, { actor, event: 'charge.enqueued', permissionId: p.id, chargeId: ch.id,
       detail: { expectedPaymentId: String(ep), customerId: String(customerId), periodStart: per.periodStart.toString(),
                 amount: chargeAmount, owed, source } });
 
     return { created: true, charge: ch, expectedPaymentId: String(ep), customerId: String(customerId), createdCustomer,
-             periodStart: per.periodStart.toString(), amountSource: source };
-  });
+             periodStart: per.periodStart.toString(), periodEnd: per.periodEnd.toString(), amountSource: source };
+  }
 }

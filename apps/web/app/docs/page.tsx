@@ -65,8 +65,8 @@ await enqueueCharge({ permission, amount: usageThisPeriod });
 
 // 3. "Paid" means the on-chain events say so — never that a transaction was sent.`}</Pre>
       <P>
-        The first call is Coinbase&apos;s Base Account SDK; the second is Retainer&apos;s queue. The signing page at <C>/sign</C> and the
-        API route behind it are the real implementation of step 1. <Cite file="apps/web/app/api/permissions/route.js" />
+        The first call is Coinbase&apos;s Base Account SDK; the second is Retainer&apos;s queue. A customer&apos;s billing link — <C>/pay/&lt;token&gt;</C>, where
+        the merchant&apos;s exact terms come from the link — and the API route behind it are the real implementation of step 1. <Cite file="apps/web/app/api/permissions/route.js" />
       </P>
 
       <Callout kind="limit" title="Where it runs">

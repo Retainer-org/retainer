@@ -27,7 +27,8 @@ export async function GET(req) {
   const pub = publicClient();
   const perms = (await query(
     `SELECT id, permission_hash, account, spender, token, allowance, period_seconds, start_ts, end_ts, salt, extra_data,
-            recipient, approved_tx_hash, revoked_at, revoked_tx_hash, created_at
+            recipient, approved_tx_hash, revoked_at, revoked_tx_hash, created_at,
+            (SELECT l.merchant_name FROM billing_links l WHERE l.id = permissions.link_id) AS merchant_name
        FROM permissions WHERE lower(signer_eoa) = $1 ORDER BY id DESC LIMIT 50`, [address])).rows;
   const ids = perms.map((p) => p.id);
   const charges = ids.length ? (await query(
@@ -57,7 +58,7 @@ export async function GET(req) {
     const state = p.revoked_at || revokedOnChain === true ? 'revoked' : now >= end ? 'expired' : now < start ? 'not_started' : 'active';
     const spent = period ? BigInt(period.spend ?? period[2]) : null;
     return {
-      id: String(p.id), permissionHash: p.permission_hash, account: p.account, recipient: p.recipient,
+      id: String(p.id), permissionHash: p.permission_hash, account: p.account, recipient: p.recipient, merchantName: p.merchant_name,
       allowance: String(p.allowance), period: Number(p.period_seconds), start, end, salt: String(p.salt), extraData: p.extra_data,
       spender: p.spender, token: p.token, state,
       revokedOnChain, revokeRecorded: !!p.revoked_at, approveTx: p.approved_tx_hash, revokeTx: p.revoked_tx_hash,

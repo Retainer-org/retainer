@@ -11,6 +11,8 @@ import { recentEvents } from '../../worker/src/events.js';
 import { checkGasTank } from '../../worker/src/gastank.js';
 import { indexEvents, confirmCharges } from '../../worker/src/reconciler.js';
 import { enqueuePullCharge } from '../../worker/src/enqueue.js';
+import { randomBytes } from 'node:crypto';
+import { getAddress, isAddress } from 'viem';
 
 const [cmd, ...rest] = process.argv.slice(2);
 const arg = (k, d) => { const i = rest.indexOf(`--${k}`); return i >= 0 ? rest[i + 1] : d; };
@@ -148,6 +150,51 @@ async function main() {
          FROM deliveries d JOIN events e ON e.id = d.event_id
         ORDER BY d.id DESC LIMIT $1`, [Number(arg('limit', 30))])).rows); break;
 
+    case 'link-create': {
+      // A billing link: the exact terms a merchant offers, carried by /pay/<token>. Guarded here
+      // and again by the table's constraints; registration pins every term from the row.
+      const DAY = 86400, CEILING = 1_000_000_000n;   // 1,000 USDC: a testnet ceiling on any one cap
+      const merchant = String(arg('merchant', '')).trim();
+      const treasury = arg('treasury');
+      const allowance = BigInt(arg('allowance', '0'));
+      const period = arg('period-seconds') ? Number(arg('period-seconds')) : Number(arg('period-days', '1')) * DAY;
+      const duration = Number(arg('duration-days', '30')) * DAY;
+      const rule = arg('first-charge', 'none');
+      const firstAmount = rule === 'none' ? null : BigInt(arg('first-amount', String(allowance)));
+      const start = arg('start') ? Number(arg('start')) : null;
+      const expires = Number(arg('expires-days', '30'));
+      const fail = (m) => { throw new Error(`link-create: ${m}`); };
+      if (merchant.length < 1 || merchant.length > 80) fail('--merchant must be 1 to 80 characters');
+      if (!isAddress(treasury ?? '')) fail('--treasury must be an address');
+      if (allowance <= 0n || allowance > CEILING) fail(`--allowance must be > 0 and at most ${CEILING} base units`);
+      if (!(period >= 3600)) fail('the period must be at least one hour');
+      if (!(duration >= period)) fail('the duration must be at least one period');
+      if (!['at_signup', 'end_of_first_period', 'none'].includes(rule)) fail('--first-charge must be at_signup, end_of_first_period or none');
+      if (firstAmount !== null && (firstAmount <= 0n || firstAmount > allowance)) fail('--first-amount must be > 0 and no more than the allowance');
+      if (!(expires > 0)) fail('--expires-days must be positive');
+      const token = randomBytes(16).toString('base64url');
+      const { rows } = await query(
+        `INSERT INTO billing_links (token, merchant_name, treasury, chain_id, allowance, period_seconds, duration_seconds, start_at,
+                                    first_charge, first_charge_amount, expires_at, single_use, created_by)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10, now() + make_interval(days => $11), $12, 'cli') RETURNING id, expires_at`,
+        [token, merchant, getAddress(treasury), config().chainId, allowance.toString(), period, duration, start,
+         rule, firstAmount?.toString() ?? null, expires, rest.includes('--single-use')]);
+      const base = process.env.PUBLIC_BASE_URL ?? 'https://retainer-one.vercel.app';
+      out({ id: rows[0].id, token, url: `${base}/pay/${token}`, expiresAt: rows[0].expires_at });
+      break;
+    }
+    case 'link-list': {
+      const { rows } = await query(`SELECT id, token, merchant_name, allowance, period_seconds, first_charge, first_charge_amount,
+                                           single_use, used_at, revoked_at, expires_at FROM billing_links ORDER BY id DESC LIMIT $1`, [Number(arg('limit', '20'))]);
+      out(rows);
+      break;
+    }
+    case 'link-revoke': {
+      // Withdraws the link: no new sign-ups. Permissions already created from it are unaffected.
+      const { rows } = await query('UPDATE billing_links SET revoked_at = now() WHERE token = $1 AND revoked_at IS NULL RETURNING id, token', [arg('token')]);
+      out(rows[0] ?? { revoked: false, reason: 'no such link, or already revoked' });
+      break;
+    }
     case 'gas': out(await checkGasTank()); break;
     case 'reconcile': {
       const idx = await indexEvents(arg('from') ? { fromBlock: Number(arg('from')) } : {});
@@ -164,6 +211,12 @@ async function main() {
   ledger                        confirmed charges -> tx hashes
   audit        [--limit n]      consent + charge audit trail
   gas                           executor gas tank
+  --- billing links ---
+  link-create  --merchant NAME --treasury 0x.. --allowance U [--period-days N | --period-seconds S]
+               [--duration-days D] [--first-charge at_signup|end_of_first_period|none] [--first-amount U]
+               [--start UNIX] [--expires-days N] [--single-use]
+  link-list    [--limit n]
+  link-revoke  --token T
   --- phase 2 ---
   customer-add  --label L                     customers
   customer-link --customer N --address 0x..   link a sender to a customer

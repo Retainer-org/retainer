@@ -11,7 +11,7 @@ export function Footer() {
       { title: "Source on GitHub", href: "https://github.com/Retainer-org/retainer" },
       { title: "Docs", href: "/docs" },
       { title: "Dashboard", href: "/dashboard" },
-      { title: "Sign a permission (testnet)", href: "/sign" },
+      { title: "Try the demo (testnet)", href: "/try" },
     ]},
     { title: "On-chain", items: [
       { title: "SpendRouter (verified)", href: `https://sepolia.basescan.org/address/${ROUTER}#code` },

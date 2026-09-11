@@ -27,11 +27,32 @@ export function policy() {
     periodSeconds: Number(process.env.WEB_PERIOD_DAYS ?? 1) * DAY,
     durationSeconds: Number(process.env.WEB_DURATION_DAYS ?? 30) * DAY,     // start -> end, exactly
     startToleranceSeconds: 600,                                              // clock skew between page and server
+    fixedStart: null,                                                        // a link can fix the start; the operator terms never do
     limits: {
       perSignerSeconds: Number(process.env.REGISTRATION_SIGNER_COOLDOWN_SECONDS ?? 600),
       perIpPerHour: Number(process.env.REGISTRATION_PER_IP_PER_HOUR ?? 5),
       globalPerHour: Number(process.env.REGISTRATION_GLOBAL_PER_HOUR ?? 60),
     },
+  };
+}
+
+/**
+ * The terms a billing link offers, pinned from its row. Chain addresses, limits and the
+ * tolerance come from configuration; everything the customer agrees to -- the cap, the period,
+ * the duration, the start, and who is paid -- comes from the link, and nothing from the caller.
+ * The payee is enforced on-chain too: it is encoded into the permission's extraData, which the
+ * router pays.
+ */
+export function linkPolicy(link) {
+  const base = policy();
+  return {
+    ...base,
+    treasury: getAddress(link.treasury),
+    extraData: encodeExtraData(base.executor, getAddress(link.treasury)),
+    allowance: BigInt(link.allowance),
+    periodSeconds: Number(link.period_seconds),
+    durationSeconds: Number(link.duration_seconds),
+    fixedStart: link.start_at == null ? null : Number(link.start_at),
   };
 }
 
@@ -60,7 +81,8 @@ export function checkPolicy(p, pol, now) {
   if (p.allowance !== pol.allowance) return fail('allowance', pol.allowance, p.allowance);
   if (p.period !== pol.periodSeconds) return fail('period', pol.periodSeconds, p.period);
   if (p.end - p.start !== pol.durationSeconds) return fail('end', `start + ${pol.durationSeconds}`, `start + ${p.end - p.start}`);
-  if (Math.abs(p.start - now) > pol.startToleranceSeconds) return fail('start', `within ${pol.startToleranceSeconds}s of now (${now})`, p.start);
+  if (pol.fixedStart != null) { if (p.start !== pol.fixedStart) return fail('start', pol.fixedStart, p.start); }
+  else if (Math.abs(p.start - now) > pol.startToleranceSeconds) return fail('start', `within ${pol.startToleranceSeconds}s of now (${now})`, p.start);
   return null;
 }
 

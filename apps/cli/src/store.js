@@ -7,14 +7,17 @@ import { config, decodeExtraData } from '@retainer/chain';
  * struct the user signed, their signature, and when. Nothing here is mutated
  * afterwards except registration and revocation bookkeeping.
  */
-export async function storePermission(p) {
+export async function storePermission(p, c = null) {
+  // With a client, everything happens inside the caller's transaction -- so a permission and
+  // the first charge its link schedules are created together or not at all.
+  if (!c) return tx((cc) => storePermission(p, cc));
   const { executor, recipient } = decodeExtraData(p.extraData);
-  const { rows } = await query(
+  const { rows } = await c.query(
     `INSERT INTO permissions
       (permission_hash, account, spender, token, allowance, period_seconds, start_ts, end_ts,
        salt, extra_data, executor, recipient, chain_id, signature, approved_tx_hash, approved_at,
-       signing_path, signer_eoa, registration_ip_hash)
-     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19)
+       signing_path, signer_eoa, registration_ip_hash, link_id)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20)
      ON CONFLICT (permission_hash) DO UPDATE SET
        approved_tx_hash = COALESCE(permissions.approved_tx_hash, EXCLUDED.approved_tx_hash),
        approved_at      = COALESCE(permissions.approved_at, EXCLUDED.approved_at)
@@ -25,18 +28,18 @@ export async function storePermission(p) {
      p.approvedTxHash ?? null, p.approvedTxHash ? new Date() : null,
      // How it was signed (migration 004). Callers that predate it leave these
      // NULL rather than guessing, so the column never claims something unverified.
-     p.signingPath ?? null, p.signerEoa ? getAddress(p.signerEoa) : null, p.ipHash ?? null]);
+     p.signingPath ?? null, p.signerEoa ? getAddress(p.signerEoa) : null, p.ipHash ?? null, p.linkId ?? null]);
 
   const id = rows[0].id;
-  await tx(async (c) => audit(c, {
+  await audit(c, {
     actor: 'user', event: 'permission.signed', permissionId: id, txHash: p.approvedTxHash ?? null,
     detail: {
       permissionHash: p.permissionHash, account: p.account, spender: p.spender, token: p.token,
       allowance: p.allowance.toString(), periodSeconds: p.period, start: p.start, end: p.end,
       salt: p.salt.toString(), extraData: p.extraData, signature: p.signature,
-      signingPath: p.signingPath ?? null, signerEoa: p.signerEoa ?? null,
+      signingPath: p.signingPath ?? null, signerEoa: p.signerEoa ?? null, linkId: p.linkId ?? null,
     },
-  }));
+  });
   return id;
 }
 

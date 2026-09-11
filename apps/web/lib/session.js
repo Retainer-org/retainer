@@ -19,6 +19,8 @@ function secret() {
   return s;
 }
 const mac = (payload) => createHmac('sha256', secret()).update(payload).digest();
+/** A MAC for another purpose (e.g. "receipt"). The prefix keeps it from ever matching a session cookie's MAC. */
+export const macFor = (purpose, payload) => createHmac('sha256', secret()).update(`${purpose}:${payload}`).digest();
 
 export function issueCookie(address, nowMs = Date.now()) {
   const payload = Buffer.from(JSON.stringify({ v: 1, a: address.toLowerCase(), exp: Math.floor(nowMs / 1000) + SESSION_SECONDS })).toString('base64url');

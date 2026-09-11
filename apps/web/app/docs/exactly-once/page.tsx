@@ -52,7 +52,7 @@ export default function ExactlyOnce() {
       </UL>
       <P>
         For each permission, the on-chain count of <C>SpendPermissionUsed</C> events after the drill was exactly one.
-        <Cite file="README.md" line={70} label="README — crash recovery" />
+        <Cite file="README.md" line={71} label="README — crash recovery" />
       </P>
 
       <Callout title="What this does not guarantee">

@@ -23,7 +23,7 @@ import {
 /* eslint-disable @typescript-eslint/no-explicit-any */
 type Charge = { id: string; amount: string; state: string; failure: string | null; txHash: Hex | null; at: string };
 type Perm = {
-  id: string; permissionHash: Hex; account: Hex; recipient: Hex; spender: Hex; token: Hex; allowance: string; period: number;
+  id: string; permissionHash: Hex; account: Hex; recipient: Hex; merchantName: string | null; spender: Hex; token: Hex; allowance: string; period: number;
   start: number; end: number; salt: string; extraData: Hex; state: "active" | "revoked" | "expired" | "not_started";
   revokedOnChain: boolean | null; revokeRecorded: boolean; approveTx: Hex | null; revokeTx: Hex | null;
   thisPeriod: { start: number; end: number; spent: string; remaining: string } | null; accountBalance: string | null; charges: Charge[];
@@ -229,7 +229,7 @@ export function AccountView() {
           <p className="text-sm leading-6 text-neutral-700 dark:text-neutral-300">
             <b>No permissions for {short(eoa)}.</b> If you authorised a payment with a different account, switch to it in {walletName}.
           </p>
-          <p className="mt-2 text-sm"><Link href="/sign" className="text-brand-primary hover:underline">Authorise a payment →</Link></p>
+          <p className="mt-2 text-sm text-neutral-600 dark:text-neutral-400">Payments are set up from the link your merchant sends. To see how it works, <Link href="/try" className="text-brand-primary hover:underline">try the demo →</Link></p>
         </section>
       )}
       {signedInHere && perms?.map((p) => {
@@ -243,7 +243,7 @@ export function AccountView() {
           <article key={p.id} className={card} data-permission={p.id}>
             <header className="flex flex-wrap items-center justify-between gap-2">
               <h2 className="text-sm font-semibold text-neutral-900 dark:text-white">
-                Permission #{p.id} <span className="font-normal text-neutral-500">· pays <span className="font-mono">{short(p.recipient)}</span>{pol && p.recipient.toLowerCase() === pol.treasury.toLowerCase() ? " (Retainer demo merchant)" : ""}</span>
+                Permission #{p.id} <span className="font-normal text-neutral-500">· {p.merchantName ? <>billed by {p.merchantName} · </> : null}pays <span className="font-mono">{short(p.recipient)}</span>{pol && p.recipient.toLowerCase() === pol.treasury.toLowerCase() ? " (Retainer demo merchant)" : ""}</span>
               </h2>
               <span className={`rounded-full px-2.5 py-0.5 text-xs font-medium ring-1 ${badge.cls}`}>{badge.label}</span>
             </header>

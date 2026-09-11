@@ -11,8 +11,9 @@
  * On the way it also asserts the per-signer rate limit with a second, validly signed
  * registration, and that the refusal sent nothing.
  *
- * Nothing in this script charges: it enqueues the charge in the shared database and waits
- * for whichever worker is running to claim, send and confirm it.
+ * It arrives the way a customer does: through the demo merchant's billing link (/try). The link's
+ * plan takes the first charge at signup; the script charges nothing itself -- it watches the page
+ * the customer is on, and the worker that is running, take it.
  *
  * Spends testnet funds: ETH from TEST_USER for gas, 2 USDC from the treasury. The throwaway
  * key is written (mode 600) under LOOP_KEY_DIR so anything left over stays recoverable.
@@ -28,7 +29,6 @@ import { privateKeyToAccount, generatePrivateKey } from 'viem/accounts';
 import { baseSepolia } from 'viem/chains';
 import { publicClient, config, toStruct, smartWalletTypedData, spendPermissionManagerAbi } from '@retainer/chain';
 import { query, close } from '@retainer/db';
-import { enqueuePullCharge } from '../apps/worker/src/enqueue.js';
 
 const BASE = process.env.WEB_BASE_URL || 'http://localhost:3017';
 const CHROME = process.env.CHROME || '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome';
@@ -40,7 +40,7 @@ const erc20 = parseAbi(['function transfer(address to, uint256 value) returns (b
 const managerReads = parseAbi(['function isRevoked((address account,address spender,address token,uint160 allowance,uint48 period,uint48 start,uint48 end,uint256 salt,bytes extraData) spendPermission) view returns (bool)']);
 
 let pass = 0, fail = 0;
-const EXPECTED = 19;
+const EXPECTED = 24;
 const check = (l, ok, d = '') => { ok ? pass++ : fail++; console.log(`  [${ok ? 'PASS' : 'FAIL'}] ${l}${d ? ` — ${d}` : ''}`); return ok; };
 const hashes = [];
 const note = (label, hash) => { hashes.push([label, hash]); console.log(`  tx  ${label}: ${hash}`); };
@@ -148,15 +148,25 @@ try {
     await pub.waitForTransactionReceipt({ hash: h }); note('setup: 2 test USDC to the customer', h);
   } else console.log('  customer already has 2 USDC');
 
-  // ------------------------------------------------ 1. terms, connect, fund, sign
-  console.log('\n=== the sign page ===');
-  await send('Page.navigate', { url: `${BASE}/sign` }, S);
+  // ------------------------------------------------ 1. arriving from the merchant's link
+  console.log("\n=== the demo merchant's link (/try) ===");
+  const LINK = (await fetch(`${BASE}/try`, { redirect: 'manual' })).headers.get('location')?.split('/pay/')[1] ?? null;
+  check("/try redirects to the demo merchant's billing link", !!LINK, LINK ?? 'no redirect');
+  const lv = await (await fetch(`${BASE}/api/links/${LINK}`)).json();
+  const FIRST = BigInt(lv.link.firstChargeAmount ?? 0);
+  const first$ = (Number(FIRST) / 1e6).toFixed(2);
+  await send('Page.navigate', { url: `${BASE}/try` }, S);
   let t = await until((t) => t.includes(WALLET));
-  check('the terms are on the page before anything is connected', t.includes('What you are agreeing to'));
+  check('the merchant is named, and the terms are on the page before anything is connected',
+    t.includes(`${lv.link.merchantName} is asking you to authorise payments`) && t.includes('What you are agreeing to'));
+  check(`the terms say when the first charge is taken: ${first$} USDC, as soon as you sign`,
+    t.includes('When you are charged') && t.includes(`The first ${first$} USDC is taken as soon as you sign`));
+  check('the payee address is shown beside the name, and the name is marked as not verified', t.includes('is the name on this link, not a verified identity'));
   check(`"${WALLET}" is offered as a wallet (EIP-6963)`, await click(WALLET));
   t = await until((t) => t.includes(me.address) && t.includes('Send 2.00 USDC'), 60000);
   check('the connected account is shown, and funding is offered', t.includes(me.address) && t.includes('Send 2.00 USDC'));
   check('the terms say at most 2.00 USDC in any day', /at most 2(\.00)? USDC in any day/.test(t), (t.match(/at most[^\n]{0,60}/) || [''])[0]);
+  check('no "fund it later" option: the first charge needs the money there first', !t.includes("I'll fund it after signing"));
   const signEnabled = `[...document.querySelectorAll('button')].some((b) => b.textContent.includes(${JSON.stringify(`Sign with ${WALLET}`)}) && !b.disabled)`;
   check('before funding, the sign button is not enabled', !(await js(signEnabled)));
   check('clicking "Send 2.00 USDC" works', await click('Send 2.00 USDC'));
@@ -165,23 +175,24 @@ try {
   if (fundTx) note('customer funded their smart account from the page', fundTx);
 
   check(`clicking "Sign with ${WALLET}" works`, await click(`Sign with ${WALLET}`));
-  t = await until((t) => t.includes('Signed and registered') || /refused|could not|not what this deployment/i.test(t), 120000);
-  check('the page says "Signed and registered"', t.includes('Signed and registered'), t.includes('Signed and registered') ? '' : t.slice(0, 300).replace(/\s+/g, ' '));
+  t = await until((t) => t.includes('is live') || /refused|could not|not what this link/i.test(t), 120000);
+  check('the page says it is authorised — on the same page, with no sign-in', /Permission #\d+ is live/.test(t), /is live/.test(t) ? '' : t.slice(0, 300).replace(/\s+/g, ' '));
 
-  const perm = await one(`SELECT id, permission_hash, account, spender, token, allowance, period_seconds, start_ts, end_ts, salt, extra_data,
-                                 approved_tx_hash, signing_path::text AS signing_path, signer_eoa
-                            FROM permissions WHERE lower(signer_eoa) = lower($1) ORDER BY id DESC LIMIT 1`, [me.address]);
+  const perm = await one(`SELECT p.id, p.permission_hash, p.account, p.spender, p.token, p.allowance, p.period_seconds, p.start_ts, p.end_ts, p.salt, p.extra_data,
+                                 p.approved_tx_hash, p.signing_path::text AS signing_path, p.signer_eoa, p.created_at, l.token AS link_token
+                            FROM permissions p LEFT JOIN billing_links l ON l.id = p.link_id
+                           WHERE lower(p.signer_eoa) = lower($1) ORDER BY p.id DESC LIMIT 1`, [me.address]);
   const struct = perm && toStruct({ account: perm.account, spender: perm.spender, token: perm.token, allowance: perm.allowance,
     period: perm.period_seconds, start: perm.start_ts, end: perm.end_ts, salt: perm.salt, extraData: perm.extra_data });
   const reg = perm?.approved_tx_hash ? await pub.waitForTransactionReceipt({ hash: perm.approved_tx_hash }) : null;
-  check('stored as signed via an ordinary wallet (eoa_owned), and the registration was sent by the deployment executor and succeeded',
-    perm?.signing_path === 'eoa_owned' && reg?.status === 'success' && getAddress(reg.from) === getAddress(cfg.executor),
-    perm ? `permission #${perm.id}, from ${reg?.from}` : 'no permission stored');
+  check("stored against the demo merchant's link, signed via an ordinary wallet, registered by the deployment executor",
+    perm?.link_token === LINK && perm?.signing_path === 'eoa_owned' && reg?.status === 'success' && getAddress(reg.from) === getAddress(cfg.executor),
+    perm ? `permission #${perm.id}, link ${perm.link_token}` : 'no permission stored');
   if (perm) note(`registration: permission #${perm.id} (one signature, smart account created)`, perm.approved_tx_hash);
 
   // ------------------------------------------------ 2. the per-signer rate limit, live
   console.log('\n=== a second registration by the same signer ===');
-  const pol = await (await fetch(`${BASE}/api/permissions`)).json();
+  const pol = lv.policy;
   const now = Math.floor(Date.now() / 1000);
   const s2 = toStruct({ account: perm.account, spender: pol.router, token: pol.usdc, allowance: pol.allowance, period: pol.periodSeconds,
     start: now, end: now + pol.durationSeconds, salt: BigInt(Date.now()), extraData: pol.extraData });
@@ -189,28 +200,37 @@ try {
   const sig2 = await me.signTypedData(smartWalletTypedData(perm.account, cfg.chainId, h2));
   const n0 = await pub.getTransactionCount({ address: cfg.executor, blockTag: 'pending' });
   const r2 = await fetch(`${BASE}/api/permissions`, { method: 'POST', headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({ path: 'eoa_owned', signerEoa: me.address, permission: ser(s2), permissionHash: h2, signature: sig2 }) });
+    body: JSON.stringify({ path: 'eoa_owned', signerEoa: me.address, permission: ser(s2), permissionHash: h2, signature: sig2, link: LINK }) });
   const j2 = await r2.json();
   const n1 = await pub.getTransactionCount({ address: cfg.executor, blockTag: 'pending' });
   const stored2 = await one(`SELECT count(*)::int AS c FROM permissions WHERE permission_hash = $1`, [h2]);
   check('a validly signed second registration is refused 429 rate_limited', r2.status === 429 && j2.code === 'rate_limited', `${r2.status} ${j2.code}: ${j2.error ?? ''}`);
   check('and the refusal sent nothing and stored nothing', n0 === n1 && stored2.c === 0, `executor nonce ${n0} -> ${n1}, rows ${stored2.c}`);
 
-  // ------------------------------------------------ 3. charged by whichever worker is running
-  console.log('\n=== the charge ===');
-  const enq = await enqueuePullCharge({ permission: String(perm.id), amount: '1000000' });
-  const chargeId = String(enq.charge?.id ?? enq.chargeId ?? enq.id);
-  console.log(`  enqueued charge #${chargeId} (1 USDC); waiting for the worker to claim, send and confirm it`);
-  const ch = await poll(async () => {
-    const r = await one(`SELECT state::text AS s, confirmed_tx_hash, attempts, last_failure FROM charges WHERE id = $1`, [chargeId]);
-    return { ...r, done: r.s === 'confirmed' || r.s === 'failed_terminal' };
-  }, 10 * 60_000);
-  check('the charge was sent and confirmed (the reconciler is the only writer of "confirmed")', ch?.s === 'confirmed', `state ${ch?.s}, attempts ${ch?.attempts}, ${ch?.last_failure ?? ''}`);
-  if (ch?.confirmed_tx_hash) {
-    const rc = await pub.waitForTransactionReceipt({ hash: ch.confirmed_tx_hash });
-    check('the charge transaction was sent by the executor and succeeded', rc.status === 'success' && getAddress(rc.from) === getAddress(cfg.executor));
-    note(`charge #${chargeId}: 1.000000 USDC to the treasury`, ch.confirmed_tx_hash);
-  } else check('the charge transaction was sent by the executor and succeeded', false, 'no transaction');
+  // ------------------------------------------------ 3. the first charge, scheduled by the link and watched on the page
+  console.log('\n=== the first charge, watched on the same page ===');
+  const stages = []; const t0 = Date.now();
+  while (Date.now() - t0 < 10 * 60_000) {
+    const st = await js(`document.querySelector('[data-first-charge]')?.dataset.firstCharge ?? null`);
+    if (st && stages.at(-1) !== st) stages.push(st);
+    if (st === 'confirmed' || st === 'failed_terminal') break;
+    await sleep(1500);
+  }
+  const txt = await text();
+  const chargeTx = (await js(`[...document.querySelectorAll('[data-first-charge] a')].map((a) => a.href).filter((u) => /\/tx\//.test(u)).pop() ?? null`))?.match(/0x[0-9a-fA-F]{64}/)?.[0];
+  check(`the page showed the first charge through to confirmed, with the settled amount and a Basescan link`,
+    new RegExp(`Confirmed — ${first$} USDC settled to `).test(txt) && !!chargeTx, `stages seen: ${stages.join(' → ')}`);
+  const charges = (await query(`SELECT c.id, c.state::text AS s, c.amount, c.confirmed_tx_hash, c.confirmed_amount, c.created_at = p.created_at AS same_tx
+                                  FROM charges c JOIN permissions p ON p.id = c.permission_id WHERE c.permission_id = $1`, [perm.id])).rows;
+  check('exactly one charge exists for it, created in the same database transaction as the permission',
+    charges.length === 1 && charges[0].same_tx === true, `${charges.length} charge(s), same transaction: ${charges[0]?.same_tx}`);
+  const c1 = charges[0];
+  const rc = c1?.confirmed_tx_hash ? await pub.waitForTransactionReceipt({ hash: c1.confirmed_tx_hash }) : null;
+  check("confirmed for exactly the link's first amount, sent by the executor, and it is the transaction the page linked",
+    c1?.s === 'confirmed' && BigInt(c1.confirmed_amount ?? 0) === FIRST && rc?.status === 'success' && getAddress(rc.from) === getAddress(cfg.executor) && c1.confirmed_tx_hash === chargeTx,
+    `#${c1?.id} ${c1?.s} ${c1?.confirmed_amount}`);
+  if (c1?.confirmed_tx_hash) note(`first charge #${c1.id}: ${first$} USDC to the merchant, scheduled by the link`, c1.confirmed_tx_hash);
+  const chargeId = c1?.id;
   const ep = await poll(async () => {
     const r = await one(`SELECT ep.id, ep.state::text AS s FROM expected_payments ep JOIN charges c ON c.expected_payment_id = ep.id WHERE c.id = $1`, [chargeId]);
     return { ...r, done: r.s === 'paid' };

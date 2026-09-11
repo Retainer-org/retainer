@@ -56,7 +56,7 @@ message      { hash: <the permission's hash, from SpendPermissionManager.getHash
       </P>
       <P>
         The server always sends the wrapped form. For a returning customer whose account already exists, the validator tries the inner
-        signature first and skips the deployment. One path, new or returning. <Cite file="apps/web/app/api/permissions/route.js" line={143} />
+        signature first and skips the deployment. One path, new or returning. <Cite file="apps/web/app/api/permissions/route.js" line={163} />
       </P>
 
       <H2 id="7702">EIP-7702 accounts are detected before anyone signs</H2>
@@ -68,8 +68,8 @@ message      { hash: <the permission's hash, from SpendPermissionManager.getHash
       </P>
       <P>
         So the owner&apos;s code is read from the chain the moment the wallet connects, and a 7702 account delegating to anything but the one
-        verified delegator below is told plainly instead of being asked to sign into a failure. <Cite file="apps/web/components/sign/sign-flow.tsx" line={107} /> The server checks again before
-        doing anything that costs gas. <Cite file="apps/web/app/api/permissions/route.js" line={110} /> This is the specific thing the
+        verified delegator below is told plainly instead of being asked to sign into a failure. <Cite file="apps/web/components/sign/sign-flow.tsx" line={120} /> The server checks again before
+        doing anything that costs gas. <Cite file="apps/web/app/api/permissions/route.js" line={130} /> This is the specific thing the
         hosted flow gets wrong: its capability check reports the chain as supported, and the popup then refuses. Here the answer comes
         from the chain, not from the wallet&apos;s description of itself. <Cite file="packages/chain/src/smart-account.js" line={120} />
       </P>
@@ -95,9 +95,9 @@ message      { hash: <the permission's hash, from SpendPermissionManager.getHash
       <P>
         MetaMask also connects whichever account is selected in it, so a returning customer can arrive as a different account without noticing. The page
         shows the connected account prominently and says when it differs from one that registered earlier in the same browser session
-        <Cite file="apps/web/components/sign/sign-flow.tsx" line={335} />; re-runs every check when the wallet reports a different account, so a refusal for
-        one account never lingers for another <Cite file="apps/web/components/sign/sign-flow.tsx" line={156} />; and offers MetaMask&apos;s own account picker
-        from the refusal <Cite file="apps/web/components/sign/sign-flow.tsx" line={169} />. That behaviour is checked in a browser, with a negative control
+        <Cite file="apps/web/components/sign/sign-flow.tsx" line={369} />; re-runs every check when the wallet reports a different account, so a refusal for
+        one account never lingers for another <Cite file="apps/web/components/sign/sign-flow.tsx" line={169} />; and offers MetaMask&apos;s own account picker
+        from the refusal <Cite file="apps/web/components/sign/sign-flow.tsx" line={182} />. That behaviour is checked in a browser, with a negative control
         run against the previous page. <Cite file="scripts/check-sign-ui.mjs" line={103} />
       </P>
       <Callout kind="note" title="A deliberate, scoped exception: MetaMask's delegator">
@@ -112,7 +112,7 @@ message      { hash: <the permission's hash, from SpendPermissionManager.getHash
         version that was reviewed; if they differ, the owner is refused. <Cite file="packages/chain/src/smart-account.js" line={156} />
         <Cite file="packages/chain/src/smart-account.js" line={183} /> Every other delegate is still refused, and so is every contract account that is not a
         7702 delegation. <Cite file="packages/chain/src/smart-account.js" line={179} /> The server applies the same decision before any gas.
-        <Cite file="apps/web/app/api/permissions/route.js" line={110} />
+        <Cite file="apps/web/app/api/permissions/route.js" line={130} />
         <br /><br />
         The drill keeps all of it honest on every run: an owner delegated to MetaMask&apos;s delegator registers
         <Cite file="scripts/phase3-drills.mjs" line={291} />, a different key&apos;s signature for that account is refused
@@ -129,9 +129,9 @@ message      { hash: <the permission's hash, from SpendPermissionManager.getHash
       <UL>
         <li>The terms come first, before any wallet is connected: token, exact cap, period, start, expiry, who collects, where it goes, and how to stop it.</li>
         <li>Every figure is rendered from the exact struct that gets hashed and signed.</li>
-        <li>The sign button stays disabled until the hash computed on the page equals the manager&apos;s own <C>getHash</C>, read from the chain. <Cite file="apps/web/components/sign/sign-flow.tsx" line={270} /> <Cite file="apps/web/components/sign/sign-flow.tsx" line={272} /></li>
-        <li>That same hash is shown as the fingerprint the wallet will display, with an instruction not to sign if it differs — which turns a blind signature into one the customer can check. <Cite file="apps/web/components/sign/sign-flow.tsx" line={429} /></li>
-        <li>The server recomputes the hash itself and refuses a mismatch, so a page that showed one thing and submitted another is caught. <Cite file="apps/web/app/api/permissions/route.js" line={86} /></li>
+        <li>The sign button stays disabled until the hash computed on the page equals the manager&apos;s own <C>getHash</C>, read from the chain. <Cite file="apps/web/components/sign/sign-flow.tsx" line={283} /> <Cite file="apps/web/components/sign/sign-flow.tsx" line={290} /></li>
+        <li>That same hash is shown as the fingerprint the wallet will display, with an instruction not to sign if it differs — which turns a blind signature into one the customer can check. <Cite file="apps/web/components/sign/sign-flow.tsx" line={468} /></li>
+        <li>The server recomputes the hash itself and refuses a mismatch, so a page that showed one thing and submitted another is caught. <Cite file="apps/web/app/api/permissions/route.js" line={106} /></li>
       </UL>
 
       <H2 id="funding">Funding: the real cost of this path</H2>
@@ -139,8 +139,8 @@ message      { hash: <the permission's hash, from SpendPermissionManager.getHash
         Charges draw from the smart account, not from the customer&apos;s wallet address, and it starts empty. A customer has to move USDC
         into an address they had never seen a minute earlier. The sign page makes this its own step, with the live balance, a one-click
         transfer from the connected wallet, and an explicit acknowledgement if they choose to sign first. Whatever is in the account can be withdrawn to the owner&apos;s wallet
-        from the same step. <Cite file="apps/web/components/sign/sign-flow.tsx" line={197} />
-        <Cite file="apps/web/components/sign/sign-flow.tsx" line={384} />
+        from the same step. <Cite file="apps/web/components/sign/sign-flow.tsx" line={210} />
+        <Cite file="apps/web/components/sign/sign-flow.tsx" line={418} />
       </P>
       <Callout kind="warn" title="Not yet built: funding with a signature alone">
         USDC supports EIP-3009: the customer signs one more typed-data message authorising a transfer from their wallet to their smart
@@ -155,20 +155,20 @@ message      { hash: <the permission's hash, from SpendPermissionManager.getHash
         transaction, no row written. <Cite file="scripts/phase3-drills.mjs" line={130} />
       </P>
       <Table head={["Refusal", "What it catches"]} rows={[
-        [<C key="a">wrong_domain</C>, <>Typed data signed under the wrong domain version. <Cite key="a1" file="apps/web/app/api/permissions/route.js" line={136} /></>],
-        [<C key="b">personal_sign</C>, <>The hash signed as a plain message rather than typed data. <Cite key="b1" file="apps/web/app/api/permissions/route.js" line={132} /></>],
-        [<C key="c">unwrapped_hash</C>, <>The bare permission hash, without the account&apos;s replay-safe wrapper — which would be valid for any account. <Cite key="c1" file="apps/web/app/api/permissions/route.js" line={134} /></>],
-        [<C key="d">not_owner</C>, <>Correctly formed typed data from a key that does not own the account. <Cite key="d1" file="apps/web/app/api/permissions/route.js" line={127} /></>],
-        [<C key="e">account_mismatch</C>, <>A permission for a smart account the signer does not own. <Cite key="e1" file="apps/web/app/api/permissions/route.js" line={101} /></>],
+        [<C key="a">wrong_domain</C>, <>Typed data signed under the wrong domain version. <Cite key="a1" file="apps/web/app/api/permissions/route.js" line={156} /></>],
+        [<C key="b">personal_sign</C>, <>The hash signed as a plain message rather than typed data. <Cite key="b1" file="apps/web/app/api/permissions/route.js" line={152} /></>],
+        [<C key="c">unwrapped_hash</C>, <>The bare permission hash, without the account&apos;s replay-safe wrapper — which would be valid for any account. <Cite key="c1" file="apps/web/app/api/permissions/route.js" line={154} /></>],
+        [<C key="d">not_owner</C>, <>Correctly formed typed data from a key that does not own the account. <Cite key="d1" file="apps/web/app/api/permissions/route.js" line={147} /></>],
+        [<C key="e">account_mismatch</C>, <>A permission for a smart account the signer does not own. <Cite key="e1" file="apps/web/app/api/permissions/route.js" line={121} /></>],
         [<C key="f">eip7702</C>, <>An owner upgraded under EIP-7702, as above. <Cite key="f1" file="scripts/phase3-drills.mjs" line={250} /></>],
         [<C key="g">contract_owner</C>, <>A contract as the owner — a Safe cannot own this account, and pays by transfer instead. <Cite key="g1" file="scripts/phase3-drills.mjs" line={150} /></>],
-        [<C key="h">policy</C>, <>Any term other than the configured allowance, period, expiry, start window, spender or token. <Cite key="h1" file="apps/web/app/api/permissions/policy.js" line={52} /></>],
-        [<C key="i">rate_limited</C>, <>A second registration from one signer inside the cooldown, or too many from one client or overall. <Cite key="i1" file="apps/web/app/api/permissions/route.js" line={161} /></>],
+        [<C key="h">policy</C>, <>Any term other than the configured allowance, period, expiry, start window, spender or token. <Cite key="h1" file="apps/web/app/api/permissions/policy.js" line={73} /></>],
+        [<C key="i">rate_limited</C>, <>A second registration from one signer inside the cooldown, or too many from one client or overall. <Cite key="i1" file="apps/web/app/api/permissions/route.js" line={191} /></>],
       ]} />
       <P>
         Before this path existed the server checked only the spender and the routing, so a caller could make the executor pay to register
         any allowance, period or expiry. Every term is now pinned to configuration, and the transaction is simulated before it is sent.
-        <Cite file="apps/web/app/api/permissions/policy.js" line={26} /> <Cite file="apps/web/app/api/permissions/route.js" line={178} />
+        <Cite file="apps/web/app/api/permissions/policy.js" line={26} /> <Cite file="apps/web/app/api/permissions/route.js" line={211} />
       </P>
 
       <H2 id="revoke">Revoking</H2>
@@ -191,13 +191,13 @@ message      { hash: <the permission's hash, from SpendPermissionManager.getHash
         A customer returns to <Link href="/account" className="text-brand-primary hover:underline">/account</Link> to see what each permission allows,
         what has been taken under it, and to cancel it. Those records are served only to a browser that has proven it controls the wallet: the
         wallet signs a short message, and the site sets a session from it. Until 2026-09-11 anyone could list any address&apos;s permissions by
-        naming it; that route now refuses. <Cite file="apps/web/app/api/permissions/route.js" line={24} />
+        naming it; that route now refuses. <Cite file="apps/web/app/api/permissions/route.js" line={26} />
       </P>
       <UL>
         <li><b>The message cannot be mistaken for a permission.</b> Its domain is <C>Retainer Sign-In</C>, with no verifying contract and its own type, and it says it costs nothing and authorises no payment. <Cite file="packages/chain/src/signin.js" line={19} /></li>
         <li><b>One nonce, one try, five minutes, one site.</b> The server issues a nonce bound to the address and the requesting origin and keeps its own copy, so it rebuilds the message itself. <Cite file="packages/db/migrations/006_session_nonces.sql" line={7} /> It refuses another origin, <Cite file="apps/web/app/api/session/route.js" line={38} /> a used nonce, <Cite file="apps/web/app/api/session/route.js" line={49} /> an expired one, <Cite file="apps/web/app/api/session/route.js" line={51} /> and spends the nonce before checking the signature. <Cite file="apps/web/app/api/session/route.js" line={58} /></li>
         <li><b>Only the key — not the registration rule.</b> Sign-in needs one fact: that the person holds this wallet&apos;s key. The signature is checked by plain ECDSA recovery against the address, never through a contract, <Cite file="apps/web/app/api/session/route.js" line={64} /> so it covers a plain account and every EIP-7702-upgraded one without consulting, or trusting, its delegate. A true contract account has no key and is refused. <Cite file="apps/web/app/api/session/route.js" line={54} /> Registration keeps its own, stricter rule, because there the owner&apos;s code is what the smart account will ask to check signatures — the reasoning for the difference is beside the code. <Cite file="packages/chain/src/signin.js" line={37} /></li>
-        <li><b>An HTTP-only cookie</b>, MACed with a server secret and compared in constant time, lasting 12 hours. <Cite file="apps/web/lib/session.js" line={36} /> <Cite file="apps/web/lib/session.js" line={51} /></li>
+        <li><b>An HTTP-only cookie</b>, MACed with a server secret and compared in constant time, lasting 12 hours. <Cite file="apps/web/lib/session.js" line={38} /> <Cite file="apps/web/lib/session.js" line={53} /></li>
         <li><b>The address comes from the cookie and nowhere else</b> — the route reads no parameter, so there is nothing to change to see another customer. <Cite file="apps/web/app/api/me/permissions/route.js" line={22} /></li>
         <li><b>The page shows data only while the signed-in address is the connected wallet.</b> Switching accounts in the wallet clears it at once. <Cite file="apps/web/components/account/account-view.tsx" line={77} /> <Cite file="apps/web/components/account/account-view.tsx" line={80} /></li>
       </UL>

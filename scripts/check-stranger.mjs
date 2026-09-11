@@ -23,7 +23,11 @@ const APP = 'apps/web/app';
 const walk = (d) => readdirSync(d).flatMap((e) => { const p = join(d, e); return statSync(p).isDirectory() ? walk(p) : [p]; });
 const ROUTES = [...new Set(walk(APP).filter((p) => /\/page\.(tsx|jsx|ts|js)$/.test(p))
   .map((p) => '/' + relative(APP, p).replace(/\/?page\.(tsx|jsx|ts|js)$/, '').split('/').filter((s) => !/^\(.*\)$/.test(s)).join('/'))
-  .filter((r) => !r.includes('[')))].sort();
+  .filter((r) => !r.includes('[')))].sort()
+  // SKIP_ROUTES: static routes a deployment deliberately does not serve (e.g. the local-only /sign).
+  // EXTRA_ROUTES: dynamic pages worth a stranger's look (e.g. /pay/<token> in each of its states).
+  .filter((r) => !(process.env.SKIP_ROUTES ?? '').split(',').includes(r))
+  .concat((process.env.EXTRA_ROUTES ?? '').split(',').filter(Boolean));
 const MODES = [['light', 1280], ['dark', 1280], ['light', 390], ['dark', 390]];
 
 let pass = 0, fail = 0;

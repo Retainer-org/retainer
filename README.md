@@ -7,11 +7,12 @@ retries, failure classification, and reconciliation.
 **Phase 1 — the charge engine. Base Sepolia only.**
 
 **The testnet demo is live, and anyone can try it:
-[retainer-one.vercel.app/sign](https://retainer-one.vercel.app/sign).** Connect a
-browser wallet on Base Sepolia, read the terms, sign a permission for at most 2 test
-USDC a day, and revoke it from the same page. Charges are made by the hosted worker,
-but only once an operator schedules one — nothing schedules them automatically yet.
-Test tokens only; no real money moves.
+[retainer-one.vercel.app/try](https://retainer-one.vercel.app/try).** It opens the demo
+merchant's billing link — the way a real customer arrives. Read the terms (at most 2
+test USDC a day, first 1 USDC taken when you sign), connect a browser wallet on Base
+Sepolia, fund your smart account, and sign. The first charge is taken by the hosted
+worker and shown settling on the same page, with its Basescan link. Come back to
+`/account` any time to see charges or cancel. Test tokens only; no real money moves.
 
 ---
 
@@ -228,7 +229,7 @@ node --env-file=.env apps/worker/src/index.js            # loop
 node --env-file=.env apps/worker/src/index.js --once --charge <id>
 node --env-file=.env apps/cli/src/index.js status|ledger|attempts|audit|gas
 
-# web: landing page at /, signing harness at /sign -- port 3017
+# web: landing page at /, customer pay pages at /pay/<token> (demo: /try), operator test page at /sign (local only) -- port 3017
 set -a; . ./.env; set +a
 npm run dev -w @retainer/web
 ```

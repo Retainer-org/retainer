@@ -71,7 +71,7 @@ export default function SpendPermissions() {
         The manager moves funds by calling <C>execute()</C> on the customer&apos;s account, so the account must be a smart account that
         lists the manager as an owner. A plain externally-owned wallet cannot be the payer. Coinbase&apos;s wallet adds the manager as an
         owner inside its approval flow; a scripted account has to do it explicitly, and if it doesn&apos;t, every charge reverts.
-        <Cite file="README.md" line={132} label="README — the non-obvious prerequisite" />
+        <Cite file="README.md" line={172} label="README — the non-obvious prerequisite" />
       </P>
       <UL>
         <li>Manager, canonical on Base and Base Sepolia: <C>0xf85210B21cC50302F477BA56686d2019dC9b67Ad</C></li>

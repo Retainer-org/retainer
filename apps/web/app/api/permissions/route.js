@@ -4,10 +4,12 @@ import { createWalletClient, http, getAddress, hexToBigInt, isHex, isAddress, si
 import { privateKeyToAccount } from 'viem/accounts';
 import { baseSepolia } from 'viem/chains';
 import { spendPermissionManagerAbi, toStruct, config, publicClient,
-  deriveSmartAccount, smartWalletTypedData, registrationSignature, checkOwner, readGasTank } from '@retainer/chain';
-import { query } from '@retainer/db';
+  deriveSmartAccount, smartWalletTypedData, registrationSignature, checkOwner, readGasTank, erc20Abi } from '@retainer/chain';
+import { query, tx } from '@retainer/db';
 import { storePermission } from '../../../../cli/src/store.js';
-import { policy, publicPolicy, checkPolicy, ipHashFrom } from './policy.js';
+import { createPullCharge } from '../../../../worker/src/enqueue.js';
+import { policy, linkPolicy, publicPolicy, checkPolicy, ipHashFrom } from './policy.js';
+import { loadLink, linkState, issueReceipt } from '../../../lib/links.js';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -56,7 +58,27 @@ export async function POST(req) {
     return refuse(503, 'registration_unavailable',
       'Registration is not enabled on this deployment. It needs the executor key, which is deliberately not configured here.');
   }
-  const pol = policy();
+  let body;
+  try { body = await req.json(); } catch { return refuse(400, 'bad_request', 'body is not JSON'); }
+
+  // 0. Whose terms. A customer arrives through a billing link, and the terms are pinned from
+  //    its row -- never from the request. Without a link, only the operator path (local only)
+  //    may use the configured terms.
+  let link = null, pol;
+  if (body.link !== undefined) {
+    link = await loadLink(body.link);
+    const state = linkState(link);
+    if (state === 'not_found') return refuse(404, 'link_not_found', 'This payment link does not exist.');
+    if (state === 'revoked') return refuse(410, 'link_revoked', 'The merchant has withdrawn this payment link.');
+    if (state === 'expired') return refuse(410, 'link_expired', 'This payment link has expired.');
+    if (state === 'used') return refuse(409, 'link_used', 'This payment link has already been used.');
+    pol = linkPolicy(link);
+  } else {
+    if (process.env.RETAINER_OPERATOR_SIGN !== 'true') {
+      return refuse(403, 'link_required', 'Payments are set up from the link your merchant sends you.');
+    }
+    pol = policy();
+  }
   const pub = publicClient();
   const now = Math.floor(Date.now() / 1000);
 
@@ -67,8 +89,6 @@ export async function POST(req) {
       'Registration is paused: the executor that pays for it is low on gas. Nothing was signed on-chain; please try again later.');
   }
 
-  let body;
-  try { body = await req.json(); } catch { return refuse(400, 'bad_request', 'body is not JSON'); }
   const path = body.path;
   if (path !== 'eoa_owned' && path !== 'base_account') return refuse(400, 'bad_request', 'path must be "eoa_owned" or "base_account"');
   const m = body.permission;
@@ -79,9 +99,9 @@ export async function POST(req) {
     permission = toStruct({ ...m, salt: isHex(m.salt) ? hexToBigInt(m.salt) : m.salt });
   } catch (e) { return refuse(400, 'bad_request', `permission is malformed: ${e.shortMessage ?? e.message}`); }
 
-  // 1. Policy: the terms must be exactly the ones this deployment offers.
+  // 1. Policy: the terms must be exactly the ones offered -- the link's, or the operator's.
   const violation = checkPolicy(permission, pol, now);
-  if (violation) return refuse(400, 'policy', `${violation.field} is not what this deployment offers`, violation);
+  if (violation) return refuse(400, 'policy', `${violation.field} is not what ${link ? 'this link' : 'this deployment'} offers`, violation);
 
   // 2. The hash is recomputed on-chain, never taken from the client.
   const permissionHash = await pub.readContract({
@@ -153,6 +173,16 @@ export async function POST(req) {
     if (row) return NextResponse.json({ permissionId: String(row.id), permissionHash, alreadyRegistered: true, approveTx: row.approved_tx_hash });
   }
 
+  // 4b. A link whose first charge is taken at signup needs the money there first -- enforced
+  //     here, not only on the page, so no request can create a charge that is bound to fail.
+  if (!already && link?.first_charge === 'at_signup') {
+    const held = await pub.readContract({ address: pol.usdc, abi: erc20Abi, functionName: 'balanceOf', args: [permission.account] });
+    if (held < BigInt(link.first_charge_amount)) {
+      return refuse(400, 'fund_first', `The first charge of ${Number(link.first_charge_amount) / 1e6} USDC is taken when you sign, so your smart account must hold it first.`,
+        { needed: String(link.first_charge_amount), held: held.toString() });
+    }
+  }
+
   // 5. Rate limits -- only now, because only past this point do we spend gas.
   const ipHash = ipHashFrom(req);
   if (!already) {
@@ -171,7 +201,10 @@ export async function POST(req) {
   }
 
   // 6. Simulate, then send. A signature that would not validate costs nothing.
-  let approvedTxHash = null;
+  let approvedTxHash = null, claimed = false;
+  // A single-use link is claimed atomically just before sending, and released if the send fails,
+  // so two customers racing for one link produce exactly one registration.
+  const release = async () => { if (claimed) await query('UPDATE billing_links SET used_at = NULL WHERE id = $1 AND used_by_permission_id IS NULL', [link.id]); };
   if (!already) {
     const executor = privateKeyToAccount(process.env.EXECUTOR_PRIVATE_KEY);
     try {
@@ -179,6 +212,12 @@ export async function POST(req) {
         functionName: 'approveWithSignature', args: [permission, signature], account: executor });
     } catch (e) {
       return refuse(400, 'rejected_onchain', `The permission manager would reject this signature: ${e.shortMessage ?? e.message}`);
+    }
+    if (link?.single_use) {
+      const got = await query(`UPDATE billing_links SET used_at = now()
+         WHERE id = $1 AND used_at IS NULL AND revoked_at IS NULL AND expires_at > now() RETURNING id`, [link.id]);
+      if (got.rowCount !== 1) return refuse(409, 'link_used', 'This payment link has already been used.');
+      claimed = true;
     }
     const wallet = createWalletClient({ account: executor, chain: baseSepolia, transport: http(config().rpcUrl) });
     const send = () => wallet.writeContract({ address: pol.manager, abi: spendPermissionManagerAbi,
@@ -191,18 +230,30 @@ export async function POST(req) {
       // with a fresh nonce resolves it. Anything else, or a second failure, is refused
       // cleanly: a rejected send means no transaction and no row.
       const m = e?.shortMessage ?? e?.message ?? String(e);
-      if (!/nonce/i.test(m)) return refuse(502, 'send_failed', `The registration could not be sent: ${m}`);
+      if (!/nonce/i.test(m)) { await release(); return refuse(502, 'send_failed', `The registration could not be sent: ${m}`); }
       try { approvedTxHash = await send(); }
-      catch (e2) { return refuse(502, 'send_failed', `The registration could not be sent: ${e2?.shortMessage ?? e2?.message ?? e2}`); }
+      catch (e2) { await release(); return refuse(502, 'send_failed', `The registration could not be sent: ${e2?.shortMessage ?? e2?.message ?? e2}`); }
     }
     const r = await pub.waitForTransactionReceipt({ hash: approvedTxHash });
     if (r.status !== 'success') {
+      await release();
       return NextResponse.json({ code: 'reverted', error: 'approveWithSignature reverted after simulation passed', tx: approvedTxHash }, { status: 502 });
     }
   }
 
-  const id = await storePermission({ ...permission, permissionHash, signature, approvedTxHash,
-    signingPath: path, signerEoa, ipHash });
+  // 7. The permission, and the first charge its link's plan schedules, in ONE transaction.
+  const first = { charge: null };
+  const id = await tx(async (c) => {
+    const pid = await storePermission({ ...permission, permissionHash, signature, approvedTxHash,
+      signingPath: path, signerEoa, ipHash, linkId: link?.id ?? null }, c);
+    if (link?.single_use) await c.query('UPDATE billing_links SET used_by_permission_id = $2 WHERE id = $1', [link.id, pid]);
+    if (link && link.first_charge !== 'none') {
+      const due = link.first_charge === 'at_signup' ? null : Number(permission.start) + Number(permission.period);
+      first.charge = await createPullCharge(c, { permission: String(pid), amount: String(link.first_charge_amount),
+        now: Math.max(now, Number(permission.start)), dueAt: due, actor: 'link' });
+    }
+    return pid;
+  });
 
   return NextResponse.json({
     permissionId: String(id),
@@ -214,5 +265,9 @@ export async function POST(req) {
     approveTx: approvedTxHash,
     explorer: approvedTxHash ? `https://sepolia.basescan.org/tx/${approvedTxHash}` : null,
     gasPaidBy: 'retainer executor (the signer paid nothing)',
+    // For the page that just created it: watch this permission's first charge, and nothing else.
+    receipt: process.env.SESSION_SECRET ? issueReceipt(id) : null,
+    firstCharge: link ? { rule: link.first_charge, amount: link.first_charge_amount == null ? null : String(link.first_charge_amount),
+      chargeId: first.charge?.charge?.id ? String(first.charge.charge.id) : null } : null,
   });
 }
