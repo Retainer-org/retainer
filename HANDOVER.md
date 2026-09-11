@@ -100,7 +100,9 @@ any customer's full hash table.
 ## What is live, and where every setting lives
 
 **Web** — Vercel project `retainer`, production alias `retainer-one.vercel.app`,
-deployment `dpl_D9WTPu7PC1sCahFvJmye5nkV93pW`, built from commit `0beac71`.
+deployment `dpl_CU8zfDMij6Xcqa5SMEPaScukirxH`, built from commit `1b6210c`.
+`DEMO_PAY_TOKEN` is set, so `/try` opens the demo merchant's link. `RETAINER_OPERATOR_SIGN`
+is deliberately **not** set, so `/sign` is not served and registration without a link is refused.
 `SESSION_SECRET` is set (Sensitive) for customer sign-in.
 `EXECUTOR_PRIVATE_KEY` is set (Sensitive) so the public site can register;
 `RETAINER_ENABLE_REVIEW_WRITES` is not set, so the dashboard is read-only — a
@@ -242,20 +244,69 @@ loop, customer `0xB0bfE4d43ba6Fc81e777d9D8aB514de61aA28484`, 19/19:
 **Still open for Phase A:** a person with a fresh MetaMask account on the public URL.
 The scripted wallet proves the path; it cannot say whether it reads right to a person.
 
+## Stage 1 — billing links (commits `7cdc159`, `1b6210c`)
+
+A customer never types `/sign`; they open a link their merchant sent. `/sign` had become the
+front door by default. Now the door is `/pay/<token>`, and `/sign` is the local-only operator page.
+
+**What a link holds** (`billing_links`, migration 007, additive; `permissions.link_id` nullable):
+a 128-bit base64url token, the merchant's name, the treasury, the cap, period, duration, an
+optional fixed start, the plan for the first charge (`at_signup`, `end_of_first_period`, `none`,
+with an amount no larger than the cap), an expiry, single use, and revocation. The table's own
+constraints refuse a zero cap, a period under an hour, or a first charge above the cap. Links are
+created from the CLI: `link-create`, `link-list`, `link-revoke`.
+
+**How the terms are pinned.** The client sends the token and nothing else about the terms.
+Registration loads the row and derives the policy from it (`linkPolicy`) — USDC, the router,
+`extraData` from the executor and the link's treasury, cap, period, duration, start — and compares
+exactly with the same `checkPolicy` as before; the payee is also enforced on-chain, because the
+router pays whoever `extraData` names. Link state is checked before anything costs gas. A
+single-use link is claimed by one conditional update just before sending, and released if the
+send fails. The permission and the first charge its plan schedules are created in one database
+transaction (the loop proves it: identical timestamps). A first charge at signup needs the smart
+account funded first — enforced by the server, not only the page.
+
+**What the customer sees.** The merchant named first, with the payee address beside the name and
+plain wording that the name is what the link calls the merchant, not a verified identity. "When
+you are charged" is part of the terms. The consent standard is unchanged: terms first, fingerprint
+check, plain language. Not found, expired, used and revoked links each say what happened and where
+to go. After signing, the first charge progresses on the same page — scheduled, sent, confirmed with
+the settled amount and a Basescan link — through a receipt registration returns to that page: MACed
+under its own purpose, naming one permission, an hour long, held in page memory. The progress route
+reads nothing else, so it cannot become a lookup. `/account` is where they come back later.
+
+**The public door.** `/try` redirects to the demo merchant's link (2 USDC a day for 30 days, first
+1 USDC at signup, reusable, valid to 2026-12-10) and is the landing page's primary call to action.
+The same deploy made it live and closed `/sign`.
+
+**Verified on production:** `scripts/check-links.mjs` 28/28 — every link state, seven tampered
+terms, link A's permission with link B's token refused (and accepted with its own), no link refused,
+fund-first, the single-use race (exactly one of two), and the receipt (its own permission only;
+rewritten, altered, expired or absent refused), with the executor's nonce unchanged across every
+refusal. `scripts/public-loop.mjs` 24/24 through `/try`; `check-stranger` 118/118 including `/try`
+and each link state's page; `check-signin` 21/21 and `check-account-ui` 11/11 unchanged.
+
+| What | Transaction |
+|---|---|
+| Customer funded their smart account on the demo link's page | `0x72a06db52707fa8582a7613f8f0da9f10034e026592040567d9c5907e7a83a66` |
+| Permission #36 registered through the demo link | `0x6f70e86bef3346f177d51706546b052599ff9f62145c5a55915c2ebd93c35380` |
+| First charge #23, 1.00 USDC, scheduled by the link, taken by the Railway worker, watched on the page | `0xb67c5e74ece440abe7f954cd603d37a2ae3986828839796fff31c564bc21d3ef` |
+| Customer revoked #36 from `/account` | `0x79fd06ec6afafb46537fe9067beef1e1104567da4b82f57fbd804467ecfc5e80` |
+
 ## The remaining gaps
 
-1. **Nothing schedules a charge for a new public permission.** The worker charges
-   what is due, but a charge exists only when an operator creates one. The adopted
-   design, for when the merchant surface exists: the merchant's plan decides when the
-   first charge falls due, the customer sees that rule in the terms before signing,
-   and the system charges when it is due — never merely on registration. The demo
-   merchant's link would state "first charge at signup" up front.
-2. **Merchant surface (Phase B) — costed, not started.** Merchant identity keyed to a
+1. **A link schedules only the first charge.** Its plan decides when the first charge falls
+   due, and the customer sees that in the terms. Later charges are still created by the operator;
+   recurring schedules belong to the merchant surface.
+2. **Merchant surface (Stage 2) — costed, not started.** Merchant identity keyed to a
    wallet, billing links, every dashboard query scoped to the merchant. Additive
    migrations only; existing rows are not updated — rows without a merchant belong to
    the demo merchant by one explicit rule (paid to the current treasury), so charges
    #1–12 and their permissions stay byte-identical. A build check must fail if any
-   loader is unscoped. Until then the dashboard stays public and read-only.
+   loader is unscoped. Until then the dashboard stays public and read-only. **Requirement carried
+   from Stage 1:** once merchants create their own links, an unverified merchant name is an attack
+   surface — a link could be named after a company a customer trusts. Merchant links must carry an
+   identity bound to the signed-in merchant wallet (recorded on `/docs/limitations`).
 3. **Test funds left behind:** 2 test USDC in
    `0x291E71F715Cb73CEcfF3cB5a0C0286892297D121` (first Phase 3 drill, key not
    saved); 1 test USDC in each public-loop customer's smart account (keys kept
