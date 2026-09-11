@@ -243,7 +243,7 @@ export function AccountView() {
           <article key={p.id} className={card} data-permission={p.id}>
             <header className="flex flex-wrap items-center justify-between gap-2">
               <h2 className="text-sm font-semibold text-neutral-900 dark:text-white">
-                Permission #{p.id} <span className="font-normal text-neutral-500">· {p.merchantName ? <>billed by {p.merchantName} · </> : null}pays <span className="font-mono">{short(p.recipient)}</span>{pol && p.recipient.toLowerCase() === pol.treasury.toLowerCase() ? " (Retainer demo merchant)" : ""}</span>
+                Permission #{p.id} <span className="font-normal text-neutral-500">· {p.merchantName ? <>billed by {p.merchantName} · </> : null}pays <span className="font-mono">{short(p.recipient)}</span>{!p.merchantName && pol && p.recipient.toLowerCase() === pol.treasury.toLowerCase() ? " (Retainer demo merchant)" : ""}</span>
               </h2>
               <span className={`rounded-full px-2.5 py-0.5 text-xs font-medium ring-1 ${badge.cls}`}>{badge.label}</span>
             </header>

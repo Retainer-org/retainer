@@ -119,7 +119,7 @@ await send('Runtime.addBinding', { name: '__rpc' }, S);
 await send('Emulation.setDeviceMetricsOverride', { width: 1280, height: 1800, deviceScaleFactor: 1, mobile: false }, S);
 await send('Page.addScriptToEvaluateOnNewDocument', { source: MOCK }, S);
 const js = async (expr) => (await send('Runtime.evaluate', { expression: expr, returnByValue: true, awaitPromise: true }, S)).result?.result?.value;
-const text = () => js('document.body.innerText');
+const text = async () => (await js('document.body?.innerText ?? ""')) ?? '';
 const enabled = (label, exact = false) => `[...document.querySelectorAll('button')].some((x) => (${exact} ? x.textContent.trim() === ${JSON.stringify(label)} : x.textContent.includes(${JSON.stringify(label)})) && !x.disabled)`;
 const clickNow = (label, exact = false) => js(`(() => { const b = [...document.querySelectorAll('button')].find((x) => (${exact} ? x.textContent.trim() === ${JSON.stringify(label)} : x.textContent.includes(${JSON.stringify(label)})) && !x.disabled); if (!b) return false; b.click(); return true; })()`);
 /** Click once the button is enabled -- a page's buttons wait on async checks, and so does a person. */
@@ -160,7 +160,7 @@ try {
   check('the merchant is named, and the terms are on the page before anything is connected',
     t.includes(`${lv.link.merchantName} is asking you to authorise payments`) && t.includes('What you are agreeing to'));
   check(`the terms say when the first charge is taken: ${first$} USDC, as soon as you sign`,
-    t.includes('When you are charged') && t.includes(`The first ${first$} USDC is taken as soon as you sign`));
+    /when you are charged/i.test(t) && t.includes(`The first ${first$} USDC is taken as soon as you sign`));
   check('the payee address is shown beside the name, and the name is marked as not verified', t.includes('is the name on this link, not a verified identity'));
   check(`"${WALLET}" is offered as a wallet (EIP-6963)`, await click(WALLET));
   t = await until((t) => t.includes(me.address) && t.includes('Send 2.00 USDC'), 60000);
@@ -217,7 +217,7 @@ try {
     await sleep(1500);
   }
   const txt = await text();
-  const chargeTx = (await js(`[...document.querySelectorAll('[data-first-charge] a')].map((a) => a.href).filter((u) => /\/tx\//.test(u)).pop() ?? null`))?.match(/0x[0-9a-fA-F]{64}/)?.[0];
+  const chargeTx = (await js(`[...document.querySelectorAll('[data-first-charge] a')].map((a) => a.href).filter((u) => u.includes('/tx/')).pop() ?? null`))?.match(/0x[0-9a-fA-F]{64}/)?.[0];
   check(`the page showed the first charge through to confirmed, with the settled amount and a Basescan link`,
     new RegExp(`Confirmed — ${first$} USDC settled to `).test(txt) && !!chargeTx, `stages seen: ${stages.join(' → ')}`);
   const charges = (await query(`SELECT c.id, c.state::text AS s, c.amount, c.confirmed_tx_hash, c.confirmed_amount, c.created_at = p.created_at AS same_tx
