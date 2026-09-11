@@ -100,7 +100,8 @@ any customer's full hash table.
 ## What is live, and where every setting lives
 
 **Web** — Vercel project `retainer`, production alias `retainer-one.vercel.app`,
-deployment `dpl_LVNaxg2sBi2cS1FmDUAzvK2QFtAc`, built from commit `6f171c6`.
+deployment `dpl_D9WTPu7PC1sCahFvJmye5nkV93pW`, built from commit `0beac71`.
+`SESSION_SECRET` is set (Sensitive) for customer sign-in.
 `EXECUTOR_PRIVATE_KEY` is set (Sensitive) so the public site can register;
 `RETAINER_ENABLE_REVIEW_WRITES` is not set, so the dashboard is read-only — a
 direct POST to the review action on production is refused with "Review actions
@@ -118,8 +119,8 @@ the two packages it needs, nothing else, running as `node`.
 |---|---|---|
 | Dockerfile | `apps/worker/Dockerfile` | service variable `RAILWAY_DOCKERFILE_PATH` |
 | Restart policy | `ON_FAILURE`, 10 retries | Railway's service defaults (recorded on each deployment; not set by us) |
-| Replicas | 1, region `europe-west4-drams3a` | Railway's service defaults (`multiRegionConfig`) |
-| Deploy overlap | Railway's default (`overlapSeconds` unset) | not set — see the overlap note below |
+| Replicas | 1, region `us-east4-eqdc4a` (Virginia) | changed from `europe-west4` in Railway's dashboard, by hand — three CLI routes to it were silent no-ops, see below |
+| Deploy overlap | Railway's default (`overlapSeconds` unset): a redeploy starts the new worker before stopping the old | harmless now — the worker lease (below) lets only one work |
 | Claim floor | `RETAINER_CLAIM_ABOVE_CHARGE_ID=12` | service variable |
 | Alerts | `ALERT_EMAIL_TRANSPORT=console` (appear in Railway's logs) | service variable |
 | Chain, database, executor | `CHAIN_ID`, `BASE_SEPOLIA_RPC_URL`, `SPEND_PERMISSION_MANAGER`, `SPEND_ROUTER`, `USDC_ADDRESS`, `EXECUTOR_ADDRESS`, `EXECUTOR_PRIVATE_KEY`, `MERCHANT_TREASURY_ADDRESS`, `DATABASE_URL` | service variables |
@@ -159,33 +160,106 @@ proven both ways before the worker first ran: unset, the worker would claim #3,
 (`worker.cursors`); every deployment and restart so far resumed from them, never
 from a fresh start.
 
+**One worker at a time (commit `522d94b`).** A redeploy used to run two workers for
+about 3.7 s, and recovery acts on every open attempt — so both could act on one in
+flight, and its "superseded" branch trusted an unpinned receipt read that a lagging
+RPC node could get wrong, retrying a charge that had landed. Now a worker runs only
+while it holds a lease row (`worker_lease`, migration 005), renewed every 10 s,
+released on SIGTERM, and exits if it loses it; a crashed holder blocks its
+successor for at most 30 s. The claim, the sign-and-persist step and recovery's
+writes re-check the lease inside their own transaction. And an attempt is only
+declared dead if, at one block B, the nonce is spent and its transaction left no
+charge event up to B — a node without B errors and nothing is decided that tick.
+`scripts/check-lease.mjs` (16 checks) shows each failure it prevents. On real
+redeploys: the new worker waited 1.9 s after the old released, no overlap; on the
+region move it waited 8 s (11:11:48 → old released 11:11:55 → acquired 11:11:56 UTC).
+
+**Region.** Neon is in AWS `us-east-2` (Ohio). The worker moved from Amsterdam to
+Virginia on 2026-09-11: a database round trip went from 97–107 ms to **19.7 ms**
+median, RPC 26 ms, measured by the worker itself at startup (`worker.latency`). It
+resumed from the stored cursors (46678403); no attempt was made during the move and
+no charge has more than one successful attempt. The region was changed by hand in
+Railway's dashboard: `railway environment edit` answered "No changes to apply" to the
+region map as an object, as dot-paths, and as `deploy.region`. The CLI's login token
+was deliberately not used against Railway's API to get around that.
+
+## Phase A — the customer surface (commits `0c03159`, `0beac71`)
+
+**The hole it closed.** `GET /api/permissions?signer=0x…` listed any address's
+permissions to anyone who asked — verified live on production before the fix, when
+it returned another customer's permission #26 with no sign-in. It now answers 410
+with no data. A customer's permissions are served only by `/api/me/permissions`, to a
+browser signed in as that wallet, and that route reads the address from the session
+cookie alone.
+
+**Sign-in.** The server issues a single-use, five-minute nonce bound to the address
+and the requesting origin, and keeps its own copy (`session_nonces`, migration 006).
+The wallet signs typed data under its own domain, `Retainer Sign-In`, with no
+verifying contract and a statement that it costs nothing and authorises no payment —
+it cannot be mistaken for a permission. The server refuses another origin, an unknown,
+used or expired nonce, and spends the nonce before checking the signature. Then an
+HTTP-only cookie, MACed with `SESSION_SECRET` and compared in constant time, lasting
+12 hours.
+
+**Why sign-in and registration use different rules — read this before unifying
+them.** Sign-in needs one fact: the person holds this wallet's key. It checks that by
+plain ECDSA recovery against the address, never ERC-1271, never the delegate — so it
+works for a plain account and every EIP-7702-upgraded one (7702 adds code without
+removing the key). A true contract account has no key and is refused; it cannot
+register a permission either. Registration asks something else: will the smart
+account accept this owner's signatures on-chain? There the owner's code is the
+checker, so its delegate must be reviewed — hence the one pinned MetaMask delegate,
+which applies to registration only. The two live apart on purpose:
+`signInKeyHolder` in `packages/chain/src/signin.js` and `checkOwner` in
+`packages/chain/src/smart-account.js`, each with this reasoning beside it.
+
+**`/account`.** Each permission's cap; this period's usage and what can still be
+taken, read live from the manager's `getCurrentPeriod`; the smart account's balance;
+every charge with its Basescan link; and fund, withdraw, and revoke behind a
+confirmation. Nothing is shown before sign-in, and data only while the signed-in
+address is the connected wallet — switching accounts clears it at once. The page and
+the docs state that signing in does not make on-chain data private. `/sign` keeps its
+consent standard unchanged and points to `/account` for coming back and cancelling.
+
+**Verified on production:** `scripts/check-signin.mjs` 21/21 — the six refusals
+(another key's signature, a replayed nonce, an expired nonce, the wrong or a missing
+origin, a tampered cookie, one customer's cookie asking for another's data), each
+beside the same request done right; an upgraded account whose delegate registration
+does not trust signs in with its own key and is refused with any other; a contract
+account is refused; and the two-wallet test (A sees exactly [25], B exactly [26], a
+fresh wallet nothing, each compared with the database). `scripts/check-account-ui.mjs`
+11/11 — the same in a real browser, including the page clearing on an account switch.
+`scripts/check-stranger.mjs` 98/98 across 24 routes including `/account`. The public
+loop, customer `0xB0bfE4d43ba6Fc81e777d9D8aB514de61aA28484`, 19/19:
+
+| What | Transaction |
+|---|---|
+| Customer funded their smart account from the sign page | `0xf4aad41a9fdb5996b3a68b553e2f0506fc245c44fcc0438d1e1d3c908befd00c` |
+| Permission #27 registered by the production executor | `0xfd9c667ce8598fa43e5fea305dfd4963d4880fd5a0ebd5b4d196c4c2bd36e445` |
+| Charge #21, 1 USDC, by the Virginia worker holding the lease (confirmed 10 s later) | `0xceaff8159709870b6822063213752a3f3799adb669d5b9022833c530831646f9` |
+| Customer revoked #27 from `/account`, after its confirmation | `0xdeb74b1c1a7bfd13924c328bde5534752d7f26885bbd656ca8943a5598e43c68` |
+
+**Still open for Phase A:** a person with a fresh MetaMask account on the public URL.
+The scripted wallet proves the path; it cannot say whether it reads right to a person.
+
 ## The remaining gaps
 
-1. **Nothing schedules a charge for a new public permission.** A stranger can
-   sign and register on the public site, and revoke, but a charge exists only when
-   an operator creates one (`npm run cli -- enqueue --permission <id>`); the only
-   other caller is the public-loop script. The hosted worker then charges it. So
-   the public demo shows consent and revocation for real, and a charge only when
-   someone schedules one. Automatic scheduling on registration is a product
-   decision that has not been made.
-2. **A deploy briefly runs two workers.** On a redeploy Railway starts the new
-   deployment before stopping the old one: observed overlap about 3.7 s. Claims
-   use `SKIP LOCKED` and nonces are allocated under a lock, but recovery picks up
-   *every* open attempt, including one the old worker is still broadcasting. Its
-   re-send is harmless (same nonce, same hash); its `superseded` branch is not if
-   a lagging RPC shows the nonce spent before the receipt — the charge would be
-   retried though the first may have landed (capped by the allowance). Until this
-   is fixed (a single-instance lock, or recovery that ignores attempts younger
-   than a few seconds), redeploy only when no attempt is open — every redeploy
-   above was checked for that first. The same gap exists after a plain crash.
-3. **The worker is an ocean away from its database.** Neon is in AWS
-   `us-east-2`; the Railway service defaulted to `europe-west4`. Measured from the
-   running service at startup: 99.9–107 ms per `SELECT 1` (median), ~108 ms per
-   RPC call. An idle tick makes on the order of twenty database round trips (an
-   estimate from the code, not a measurement), so roughly two seconds of each
-   4-second poll is spent waiting on the network. A US-East Railway region
-   (e.g. `us-east4`) would be expected to cut each round trip to a few
-   milliseconds; not changed, because it moves the service.
+1. **Nothing schedules a charge for a new public permission.** The worker charges
+   what is due, but a charge exists only when an operator creates one. The adopted
+   design, for when the merchant surface exists: the merchant's plan decides when the
+   first charge falls due, the customer sees that rule in the terms before signing,
+   and the system charges when it is due — never merely on registration. The demo
+   merchant's link would state "first charge at signup" up front.
+2. **Merchant surface (Phase B) — costed, not started.** Merchant identity keyed to a
+   wallet, billing links, every dashboard query scoped to the merchant. Additive
+   migrations only; existing rows are not updated — rows without a merchant belong to
+   the demo merchant by one explicit rule (paid to the current treasury), so charges
+   #1–12 and their permissions stay byte-identical. A build check must fail if any
+   loader is unscoped. Until then the dashboard stays public and read-only.
+3. **Test funds left behind:** 2 test USDC in
+   `0x291E71F715Cb73CEcfF3cB5a0C0286892297D121` (first Phase 3 drill, key not
+   saved); 1 test USDC in each public-loop customer's smart account (keys kept
+   outside the repo).
 4. **Deep reorgs are detected, not handled.** Incoming transfers are indexed at
    three confirmations and store their block hash, so a reorg beneath one can be
    noticed. Nothing unwinds a match whose transfer disappears; a person would.
@@ -198,11 +272,6 @@ from a fresh start.
    1,000 registrations or 100 charges; the worker stops starting charges below 5.
    Shown in a real browser at both levels, from genuinely low balances, with the
    real executor as the negative control.
-7. **Test funds left behind:** 2 test USDC in
-   `0x291E71F715Cb73CEcfF3cB5a0C0286892297D121` (first Phase 3 drill, key not
-   saved); 1 test USDC in each public-loop customer's smart account (keys kept
-   outside the repo).
-
 Also open, all listed on `/docs/limitations`: production reads are not pinned to a
 block (a lagging public RPC node can answer stale — the revoke defect above was one
 case); registration rate limits key on an unsalted IP hash; the indexer stores
@@ -211,16 +280,18 @@ empty, so the customer must fund it; mainnet is untested, and the one-signature
 path depends on Solady's ERC-6492 verifier existing there. What MetaMask displays
 at signing, including any warning, has not been written up in this repository.
 
-One deliberate exception to know about before changing the signing code: exactly
-one EIP-7702 delegate is accepted as an owner — MetaMask's
-`EIP7702StatelessDeleGator`, pinned to the hash of its reviewed code. The reasoning
-is beside it in `packages/chain/src/smart-account.js`. Every other delegate is
-refused.
+One deliberate exception to know about before changing the signing code: for
+registration only, exactly one EIP-7702 delegate is accepted as an owner —
+MetaMask's `EIP7702StatelessDeleGator`, pinned to the hash of its reviewed code. The
+reasoning is beside it in `packages/chain/src/smart-account.js`. Every other delegate
+is refused for registration. Sign-in does not consult delegates at all (see Phase A).
 
 ## Pointers
 
 - `README.md` — phase-by-phase status and the evidence tables.
 - `/docs` — every claim cited to a file and line; `/docs/limitations` is the
-  honest list; `/docs/wallets` is Phase 3.
-- `scripts/` — the drills, the checks, the public checks, `prune-drill-data.mjs`
-  for residue, and `session-report.mjs`.
+  honest list; `/docs/wallets` is Phase 3 and signing in.
+- `scripts/` — the drills, the checks, `prune-drill-data.mjs` for residue,
+  `session-report.mjs`, and the checks that run against any deployment:
+  `public-loop.mjs`, `check-stranger.mjs`, `check-signin.mjs`, `check-account-ui.mjs`,
+  `check-gas-warning.mjs`, `check-lease.mjs`.
