@@ -94,7 +94,7 @@ message      { hash: <the permission's hash, from SpendPermissionManager.getHash
       <P>
         MetaMask also connects whichever account is selected in it, so a returning customer can arrive as a different account without noticing. The page
         shows the connected account prominently and says when it differs from one that registered earlier in the same browser session
-        <Cite file="apps/web/components/sign/sign-flow.tsx" line={436} />; re-runs every check when the wallet reports a different account, so a refusal for
+        <Cite file="apps/web/components/sign/sign-flow.tsx" line={452} />; re-runs every check when the wallet reports a different account, so a refusal for
         one account never lingers for another <Cite file="apps/web/components/sign/sign-flow.tsx" line={236} />; and offers MetaMask&apos;s own account picker
         from the refusal <Cite file="apps/web/components/sign/sign-flow.tsx" line={249} />. That behaviour is checked in a browser, with a negative control
         run against the previous page. <Cite file="scripts/check-sign-ui.mjs" line={95} />
@@ -128,8 +128,8 @@ message      { hash: <the permission's hash, from SpendPermissionManager.getHash
       <UL>
         <li>The terms come first, before any wallet is connected: token, exact cap, period, start, expiry, who collects, where it goes, and how to stop it.</li>
         <li>Every figure is rendered from the exact struct that gets hashed and signed.</li>
-        <li>The sign button stays disabled until the hash computed on the page equals the manager&apos;s own <C>getHash</C>, read from the chain. <Cite file="apps/web/components/sign/sign-flow.tsx" line={370} /> <Cite file="apps/web/components/sign/sign-flow.tsx" line={372} /></li>
-        <li>That same hash is shown as the fingerprint the wallet will display, with an instruction not to sign if it differs — which turns a blind signature into one the customer can check. <Cite file="apps/web/components/sign/sign-flow.tsx" line={530} /></li>
+        <li>The sign button stays disabled until the hash computed on the page equals the manager&apos;s own <C>getHash</C>, read from the chain. <Cite file="apps/web/components/sign/sign-flow.tsx" line={386} /> <Cite file="apps/web/components/sign/sign-flow.tsx" line={388} /></li>
+        <li>That same hash is shown as the fingerprint the wallet will display, with an instruction not to sign if it differs — which turns a blind signature into one the customer can check. <Cite file="apps/web/components/sign/sign-flow.tsx" line={546} /></li>
         <li>The server recomputes the hash itself and refuses a mismatch, so a page that showed one thing and submitted another is caught. <Cite file="apps/web/app/api/permissions/route.js" line={99} /></li>
       </UL>
 
@@ -139,7 +139,7 @@ message      { hash: <the permission's hash, from SpendPermissionManager.getHash
         into an address they had never seen a minute earlier. The sign page makes this its own step, with the live balance, a one-click
         transfer from the connected wallet, and an explicit acknowledgement if they choose to sign first. Whatever is in the account can be withdrawn to the owner&apos;s wallet
         from the same step. <Cite file="apps/web/components/sign/sign-flow.tsx" line={277} />
-        <Cite file="apps/web/components/sign/sign-flow.tsx" line={485} />
+        <Cite file="apps/web/components/sign/sign-flow.tsx" line={501} />
       </P>
       <Callout kind="warn" title="Not yet built: funding with a signature alone">
         USDC supports EIP-3009: the customer signs one more typed-data message authorising a transfer from their wallet to their smart
@@ -174,7 +174,7 @@ message      { hash: <the permission's hash, from SpendPermissionManager.getHash
       <P>
         The manager accepts <C>revoke</C> only from the account itself. <Cite file="contracts/src/SpendPermissionManager.sol" line={397} /> The
         account accepts <C>execute</C> from its owner, so the page asks the customer&apos;s wallet for one call:
-        <C>account.execute(manager, revoke(permission))</C>. <Cite file="apps/web/components/sign/sign-flow.tsx" line={326} /> The drill sends
+        <C>account.execute(manager, revoke(permission))</C>. <Cite file="apps/web/components/sign/sign-flow.tsx" line={341} /> The drill sends
         exactly that from the customer&apos;s own key and confirms the permission is revoked on-chain. <Cite file="scripts/phase3-drills.mjs" line={258} /> In
         the live session MetaMask submitted the same call through its own relayer instead, and upgraded the account in the same transaction; the
         revocation landed all the same. <Cite tx="0x2b19810bc90818b1a1baf0f6690aed03b1c3138cc0e218961b6f9d2b409b7a55" />
@@ -182,7 +182,7 @@ message      { hash: <the permission's hash, from SpendPermissionManager.getHash
       <P>
         Nothing indexes the revocation event, and a customer&apos;s revoke never passes through our server, so the page reports it afterwards.
         The record is written only if that transaction succeeded, contains the manager&apos;s revocation event for exactly this permission,
-        and the manager reports it revoked now. <Cite file="apps/web/app/api/permissions/revoke/route.js" line={42} />
+        and the manager reports it revoked now. <Cite file="apps/web/app/api/permissions/revoke/route.js" line={57} />
       </P>
 
       <H2 id="record">How it is recorded</H2>
@@ -195,7 +195,7 @@ message      { hash: <the permission's hash, from SpendPermissionManager.getHash
       <H2 id="unproven">Not yet proven</H2>
       <UL>
         <li><b>What MetaMask displays around the signature.</b> Signing with the real MetaMask client is proven: permission #18 was registered from a MetaMask account <Cite tx="0xa647cbb0f762f9ea7d4fe7eaef576021f4564840f5d4c0b9cd27e6dc142bf34b" />, and the fingerprint on the page matched the hash MetaMask showed. What else MetaMask displayed — including any security warning — is being recorded from that session and is not written up here yet.</li>
-        <li><b>A stranger, on the public site.</b> Registration needs the executor key, which is deliberately not deployed, and there is no hosted worker to run charges. Both are one pending, deliberate step. Until then the page says so before anyone signs. <Cite file="apps/web/components/sign/sign-flow.tsx" line={396} /></li>
+        <li><b>A stranger, on the public site.</b> Registration needs the executor key, which is deliberately not deployed, and there is no hosted worker to run charges. Both are one pending, deliberate step. Until then the page says so before anyone signs. <Cite file="apps/web/components/sign/sign-flow.tsx" line={412} /></li>
         <li><b>Mainnet.</b> The one-signature path depends on Solady&apos;s ERC-6492 verifier being deployed on the chain. It is on Base Sepolia; mainnet has not been checked.</li>
       </UL>
     </>

@@ -14,6 +14,21 @@ const REVOKED = toEventSelector(
 const refuse = (status, code, error) => NextResponse.json({ code, error }, { status });
 
 /**
+ * The customer's page waits for the receipt on its own connection before calling here, and
+ * the public RPC is load-balanced: our node can be a block or two behind theirs. A read that
+ * is merely early must not be recorded as a refusal, so each one is retried briefly.
+ */
+async function settle(read, done, tries = 6) {
+  let v = null;
+  for (let i = 0; i < tries; i++) {
+    v = await read().catch(() => null);
+    if (done(v)) return v;
+    await new Promise((r) => setTimeout(r, 1500));
+  }
+  return v;
+}
+
+/**
  * Record a revocation the customer made from their own wallet.
  *
  * Nothing indexes SpendPermissionRevoked, and a customer's revoke never passes
@@ -21,7 +36,7 @@ const refuse = (status, code, error) => NextResponse.json({ code, error }, { sta
  * active until a charge failed against it. This endpoint writes nothing on the
  * caller's say-so: it requires the transaction to have succeeded, to contain the
  * manager's revocation event for exactly this permission, and the manager to
- * report the permission revoked now.
+ * report the permission revoked at that transaction's block.
  */
 export async function POST(req) {
   let body;
@@ -36,7 +51,7 @@ export async function POST(req) {
 
   const pub = publicClient();
   const manager = config().manager.toLowerCase();
-  const receipt = await pub.getTransactionReceipt({ hash: txHash }).catch(() => null);
+  const receipt = await settle(() => pub.getTransactionReceipt({ hash: txHash }), (r) => !!r);
   if (!receipt || receipt.status !== 'success') return refuse(400, 'not_confirmed', 'that transaction has not succeeded on-chain');
 
   const revokedHere = receipt.logs.some((l) =>
@@ -45,7 +60,10 @@ export async function POST(req) {
 
   const struct = toStruct({ account: row.account, spender: row.spender, token: row.token, allowance: row.allowance,
     period: row.period_seconds, start: row.start_ts, end: row.end_ts, salt: row.salt, extraData: row.extra_data });
-  const revoked = await pub.readContract({ address: config().manager, abi: spendPermissionManagerAbi, functionName: 'isRevoked', args: [struct] });
+  // Read at the revoking block: a node that has the receipt has that block. A revocation cannot be undone,
+  // so revoked there means revoked now.
+  const revoked = await settle(() => pub.readContract({ address: config().manager, abi: spendPermissionManagerAbi,
+    functionName: 'isRevoked', args: [struct], blockNumber: receipt.blockNumber }), (v) => v === true);
   if (!revoked) return refuse(409, 'not_revoked', 'the manager does not report this permission as revoked');
 
   const id = await markRevoked(permissionHash, txHash);

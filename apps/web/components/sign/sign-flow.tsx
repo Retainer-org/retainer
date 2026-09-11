@@ -316,6 +316,21 @@ export function SignFlow() {
     finally { setBusy(null); }
   }
 
+  /** Ask the server to verify and record a revoke. Early reads are retried; a real refusal is returned as-is. */
+  async function recordRevoke(permissionHash: string, txHash: string): Promise<{ ok: true } | { ok: false; error: string }> {
+    let error = "";
+    for (let i = 0; i < 3; i++) {
+      const r = await fetch("/api/permissions/revoke", { method: "POST", headers: { "content-type": "application/json" },
+        body: JSON.stringify({ permissionHash, txHash }) }).catch(() => null);
+      const j = r ? await r.json().catch(() => ({})) : {};
+      if (r?.ok) return { ok: true };
+      error = j.error ?? (r ? `HTTP ${r.status}` : "network error");
+      if (r && r.status < 500 && j.code !== "not_confirmed" && j.code !== "not_revoked") break;
+      await new Promise((res) => setTimeout(res, 2000 * (i + 1)));
+    }
+    return { ok: false, error };
+  }
+
   async function revoke(p: Existing) {
     if (!wc || !eoa || !pol) return;
     setErr(null); setBusy("Waiting for your wallet — revoking costs a little testnet ETH…");
@@ -327,9 +342,10 @@ export function SignFlow() {
         args: [pol.manager, 0n, encodeFunctionData({ abi: spendPermissionManagerAbi, functionName: "revoke", args: [s] })] });
       setBusy("Waiting for the revocation to confirm…");
       await pub.waitForTransactionReceipt({ hash: tx });
-      await fetch("/api/permissions/revoke", { method: "POST", headers: { "content-type": "application/json" },
-        body: JSON.stringify({ permissionHash: p.permissionHash, txHash: tx }) });
       setRevoked((r) => ({ ...r, [p.permissionHash]: tx }));
+      // The contract has revoked it. Say so only as far as the server has verified and recorded it.
+      const recorded = await recordRevoke(p.permissionHash, tx);
+      if (!recorded.ok) setErr(`Revoked on-chain in ${short(tx)} — the contract enforces it. Retainer has not recorded it yet (${recorded.error}); reload this page to try the record again.`);
     } catch (e: any) { const m = e?.shortMessage ?? e?.message ?? String(e); setErr(m); setNeedEth(/insufficient funds|gas/i.test(m)); }
     finally { setBusy(null); }
   }
